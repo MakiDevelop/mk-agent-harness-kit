@@ -184,8 +184,8 @@ On a clean machine with git + Python 3 + `pip install jsonschema` + a coding age
 1. Clone repo, copy root `settings.example.json` → `settings.json`
 2. Set real `verify.commands` for the target project
 3. `ack_settings.py validate` + `compile` succeed
-4. Agent following effective loop **must not** claim done while verify fails (M2+)
-5. Wrap/wall emits `system-gap: none` or concrete gaps (M2+)  
+4. Agent following `ack_loop done-gate` **must not** claim done while verify fails (**M2**)
+5. Wrap/wall emits `system-gap: none` or concrete gaps via `ack_loop wrap-gap` (**M2**)  
 No AMH required when `memory.enabled` is false (default).
 
 ### 8.4 Roadmap (activation-gated)
@@ -196,7 +196,7 @@ No AMH required when `memory.enabled` is false (default).
 | **M0 settings** | schema + examples + PROFILES + README UX | **done 2026-08-12** (Codex PASS) |
 | **M0b product docs** | §8 + COMPILE.md | **done 2026-08-12** |
 | **M1 CLI** | `cli/ack_settings.py` validate + compile | **done 2026-08-12** |
-| **M2 loop enforcement** | portable skill/hook pack driven by effective settings | after M1 |
+| **M2 loop enforcement** | `cli/ack_loop.py` + skill + LOOP.md | **this change** |
 | **M3 harness opt-in** | `install_hooks` portable | after M2 |
 | **M4 graph edges** | filesystem briefing adapter for dual-review | after M2 |
 | **M5 public clone** | strip private noise; license | later |

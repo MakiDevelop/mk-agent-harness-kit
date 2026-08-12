@@ -38,9 +38,11 @@ packages/agent-contract-kit/
   templates/         # YAML examples (solo + dual-review)
   examples/          # dogfood exports (sanitized)
   cli/ack_settings.py  # validate / compile / summary (M1)
+  cli/ack_loop.py      # verify / done-gate / wrap-gap / wall (M2)
+  skills/loop-enforcement/  # agent-facing rules (M2)
   tests/             # unit tests for CLI
   adapters/          # optional filesystem, etc.
-  docs/              # PROFILES, COMPILE, PORTABILITY
+  docs/              # PROFILES, COMPILE, LOOP, PORTABILITY
 ```
 
 ## Relation to mk-agentos
@@ -70,8 +72,17 @@ In-package `settings.example.json` is **self-test only** (fail-closed placeholde
 python3 packages/agent-contract-kit/cli/ack_settings.py validate --settings settings.json
 python3 packages/agent-contract-kit/cli/ack_settings.py compile --settings settings.json -o .mk-agentos/settings.resolved.json
 python3 packages/agent-contract-kit/cli/ack_settings.py summary --settings settings.json
+
+# Loop enforcement (before claim done)
+python3 packages/agent-contract-kit/cli/ack_loop.py done-gate --settings settings.json
+python3 packages/agent-contract-kit/cli/ack_loop.py wrap-gap --settings settings.json
+
 python3 packages/agent-contract-kit/tests/test_ack_settings.py
+python3 packages/agent-contract-kit/tests/test_ack_loop.py
 ```
+
+Agent skill: `skills/loop-enforcement/SKILL.md`  
+Loop docs: `docs/LOOP.md`
 
 Graph YAML templates (`templates/solo-loop.yaml`, `dual-review.yaml`) remain illustrative until edge schemas land.
 
