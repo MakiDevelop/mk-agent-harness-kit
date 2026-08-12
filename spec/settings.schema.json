@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MakiDevelop/mk-agentos/packages/agent-contract-kit/spec/settings.schema.json",
+  "title": "mk-agentos settings",
+  "description": "Single user-facing config after git clone. Profiles expand to prompt/context/harness/loop/graph defaults. JSON Schema `default` keywords are annotations only; compilers must apply docs/PROFILES.md expansion + Normalization rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema for editor support."
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["solo", "solo-strict", "dual-review", "governed"],
+      "description": "Shortcut. Expands layers.* defaults; explicit keys override per Normalization."
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "default": ".",
+          "description": "Project root relative to cwd or absolute. Default: ."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$",
+          "description": "Safe slug for filenames only (no path separators)."
+        }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Shorthand for loop verify. Normalization: if set, becomes effective loop.verify (replaces profile default). Shell commands — only load trusted settings files.",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Non-empty shell commands that must pass before done."
+        }
+      },
+      "required": ["commands"]
+    },
+    "human": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "require_confirm_for": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["git_push", "git_force_push", "delete", "deploy", "secrets", "governance_edit"]
+          },
+          "uniqueItems": true,
+          "description": "Harness confirms. Normalization always unions {secrets} into effective set."
+        }
+      }
+    },
+    "layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional overrides after profile expansion. Precedence in PROFILES.md Normalization.",
+      "properties": {
+        "prompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "briefing_template": {
+              "type": "string",
+              "enum": ["default", "minimal", "council"],
+              "description": "Symbolic id until briefing assets ship; not a file path."
+            },
+            "require_goal": { "type": "boolean" }
+          }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "on_session_start": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "project-state",
+                  "open-gaps",
+                  "last-handoff",
+                  "git-status",
+                  "settings-summary"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "memory": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Default false via profile: no external memory server required after clone."
+                },
+                "backend": {
+                  "type": "string",
+                  "enum": ["none", "amh", "file"]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": { "enabled": { "const": true } },
+                    "required": ["enabled"]
+                  },
+                  "then": {
+                    "properties": {
+                      "backend": { "type": "string", "enum": ["amh", "file"] }
+                    },
+                    "required": ["backend"]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": ["light", "standard", "governed"]
+            },
+            "block_force_push": { "type": "boolean" },
+            "block_rm_rf": { "type": "boolean" },
+            "install_hooks": {
+              "type": "boolean",
+              "description": "Opt-in portable hooks; never silent-install into user global config."
+            }
+          }
+        },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_failed_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "require_system_gap_on_wall": { "type": "boolean" },
+            "require_system_gap_on_wrap": { "type": "boolean" },
+            "verify": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "commands": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 },
+                  "minItems": 1
+                }
+              },
+              "required": ["commands"]
+            }
+          }
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["solo", "dual-review", "custom"],
+              "description": "solo = minimal graph (loop only)."
+            },
+            "edges": {
+              "type": "string",
+              "description": "builtin:solo | builtin:dual-review | path to graph YAML"
+            },
+            "agents": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Logical seat → CLI/agent id. Required when mode is dual-review or custom."
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "mode": { "const": "solo" } },
+                "required": ["mode"]
+              },
+              "then": {
+                "properties": {
+                  "edges": {
+                    "type": "string",
+                    "pattern": "^(builtin:solo|.+)$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "mode": { "const": "dual-review" } },
+                "required": ["mode"]
+              },
+              "then": {
+                "properties": {
+                  "edges": {
+                    "type": "string",
+                    "pattern": "^(builtin:dual-review|.+)$"
+                  },
+                  "agents": {
+                    "type": "object",
+                    "required": ["executor", "reviewer"],
+                    "additionalProperties": { "type": "string" }
+                  }
+                },
+                "required": ["agents"]
+              }
+            },
+            {
+              "if": {
+                "properties": { "mode": { "const": "custom" } },
+                "required": ["mode"]
+              },
+              "then": {
+                "required": ["edges", "agents"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "mode": { "const": "solo" },
+                  "edges": { "const": "builtin:dual-review" }
+                },
+                "required": ["mode", "edges"]
+              },
+              "then": { "not": {} }
+            },
+            {
+              "if": {
+                "properties": {
+                  "mode": { "const": "dual-review" },
+                  "edges": { "const": "builtin:solo" }
+                },
+                "required": ["mode", "edges"]
+              },
+              "then": { "not": {} }
+            }
+          ]
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filesystem_briefing": { "type": "boolean" },
+        "langgraph": { "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": { "enum": ["solo-strict", "dual-review", "governed"] }
+        },
+        "required": ["profile"]
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["verify"] },
+          {
+            "properties": {
+              "layers": {
+                "type": "object",
+                "required": ["loop"],
+                "properties": {
+                  "loop": {
+                    "type": "object",
+                    "required": ["verify"]
+                  }
+                }
+              }
+            },
+            "required": ["layers"]
+          }
+        ]
+      }
+    }
+  ]
+}

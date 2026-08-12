@@ -52,15 +52,25 @@ packages/agent-contract-kit/
 
 **Rule:** OS may call kit; kit must not depend on OS paths (`~/.claude`, mini2, 91app, …).
 
-## Quick start (when P0 schemas land)
+## Quick start (settings-first)
+
+From **repo root** (canonical):
 
 ```bash
-# planned
-ack validate examples/solo-loop.yaml
-ack validate examples/dual-review.yaml
+cp settings.example.json settings.json
+# edit verify.commands — must be real checks for solo-strict+
 ```
 
-Today: read `DESIGN.md` + `templates/*.yaml` stubs; schemas are placeholders.
+Schema: `spec/settings.schema.json`  
+Profile expansion: `docs/PROFILES.md`  
+In-package `settings.example.json` is **self-test only** (fail-closed placeholder verify); do not copy to repo root.
+
+```bash
+# validate settings (when CLI present)
+python3 packages/agent-contract-kit/cli/ack_settings.py validate --settings settings.json
+```
+
+Graph YAML templates (`templates/solo-loop.yaml`, `dual-review.yaml`) remain illustrative until edge schemas land.
 
 ## Provenance (inspiration, not runtime deps)
 

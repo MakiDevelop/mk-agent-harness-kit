@@ -1,0 +1,14 @@
+{
+  "$schema": "./spec/settings.schema.json",
+  "profile": "solo-strict",
+  "project": {
+    "root": ".",
+    "name": "kit-selftest"
+  },
+  "verify": {
+    "commands": ["python3 -c \"import sys; sys.exit(1)\""]
+  },
+  "human": {
+    "require_confirm_for": ["git_push", "delete", "deploy"]
+  }
+}
