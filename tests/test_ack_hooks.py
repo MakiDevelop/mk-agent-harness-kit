@@ -192,7 +192,8 @@ class TestAckHooksInstall(unittest.TestCase):
             # Fake home claude path via symlink root -> structure is hard;
             # instead monkey by pointing project root at a dir whose .claude/settings.json
             # we can't easily make == Path.home(); unit-test the helper instead.
-            from ack_hooks import is_user_global_claude_settings
+            sys.path.insert(0, str(KIT / "cli"))
+            from ack_hooks import is_user_global_claude_settings  # noqa: E402
 
             home_settings = Path.home() / ".claude" / "settings.json"
             self.assertTrue(
