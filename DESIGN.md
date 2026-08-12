@@ -198,8 +198,8 @@ No AMH required when `memory.enabled` is false (default).
 | **M1 CLI** | `cli/ack_settings.py` validate + compile | **done 2026-08-12** |
 | **M2 loop enforcement** | `cli/ack_loop.py` + skill + LOOP.md | **done 2026-08-12** |
 | **M3 harness opt-in** | `hooks/pretool-harness.py` + `ack_hooks` | **done 2026-08-12** |
-| **M4 graph edges** | `ack_review` filesystem dual-review | **this change** |
-| **M5 public clone** | strip private noise; license | later |
+| **M4 graph edges** | `ack_review` filesystem dual-review | **done 2026-08-12** |
+| **M5 public clone** | LICENSE, GETTING_STARTED, portability lint | **this change** |
 
 `READY` in OPEN-LOOPS ≠ auto-implement. Follow BACKLOG-ACTIVATION-PROTOCOL.
 
@@ -224,8 +224,8 @@ Ultimate (parent OS metric still holds):
 ## 10. Open questions (for ratify)
 
 1. Public package name: `agent-contract-kit` vs shorter brand?  
-2. License: Apache-2.0 vs MIT?  
-3. First CLI language: Python (align parent) vs pure shell + check-jsonschema?  
-4. When to open parent repo vs only publish this package?  
+2. ~~License~~ → **Apache-2.0** (repo root `LICENSE`, M5)  
+3. ~~CLI language~~ → **Python 3** + `jsonschema`  
+4. When to flip GitHub repo visibility / extract kit subtree? **Chair decision** (M5 prepares surface only)  
 
-Default proposals: keep name; Apache-2.0; Python CLI; **keep parent private**, publish package later.
+Default: keep name; parent may stay private until Chair opens it; kit remains extractable.

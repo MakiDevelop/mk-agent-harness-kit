@@ -15,6 +15,10 @@ This package must remain usable **without** the parent `mk-agentos` tree.
 - Secrets, tokens, private URLs  
 - Assumptions that `~/.claude/CLAUDE.md` exists  
 
-## Lint (planned)
+## Lint
 
-CI / local script fails if kit tree matches denylist regexes.
+```bash
+python3 packages/agent-contract-kit/cli/ack_portability_lint.py
+```
+
+Exit 0 required before publishing kit changes. Scans `cli/`, `hooks/`, `tests/`, `templates/`, `skills/`, `spec/` (not denylist docs).

@@ -116,10 +116,9 @@ Upstream working copies (lab, not required to use kit):
 - `~/.claude/docs/governance/edge-contract.template.md`  
 - `~/.claude/docs/governance/graphs/`  
 
-## License (intent)
+## License
 
-TBD before first public release (likely Apache-2.0 or MIT).  
-Until then: same as parent repo; **do not treat as public API**.
+Apache License 2.0 — see repo root [`LICENSE`](../../LICENSE).
 
 ## Tracking
 
