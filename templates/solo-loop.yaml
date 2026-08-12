@@ -1,0 +1,39 @@
+# Solo loop — single agent (minimal graph)
+# Status: illustrative stub (not schema-validated yet)
+
+meta:
+  name: solo-loop
+  version: "0.1-stub"
+  description: One worker node; verify before done; system-gap on wall.
+
+nodes:
+  - id: worker
+    kind: agent
+    loop:
+      verify:
+        deterministic: [lint, test]
+        done_when: "agreed commands exit 0; no unverified claims"
+      stop:
+        max_failed_attempts: 2
+        on_stop: system-gap
+
+edges: []
+# Optional self-loop later:
+# - id: worker-retry
+#   from: worker
+#   to: worker
+#   kind: loop-back
+#   on_error: { retry: { max: 0 }, cut_downstream: true }
+
+state:
+  keys:
+    - task
+    - verify_report
+    - system_gaps
+
+# Post-run (convention)
+system_gap_required: true
+# emit either:
+#   system-gap: none
+# or 1–3 lines:
+#   {mode} → {control} → {ratify?}

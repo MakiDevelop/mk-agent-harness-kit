@@ -1,0 +1,91 @@
+# Dual review — executor + independent reviewer
+# Status: illustrative stub (not schema-validated yet)
+
+meta:
+  name: dual-review
+  version: "0.1-stub"
+  description: Implement → deterministic verify → independent review; no self-accept.
+
+nodes:
+  - id: executor
+    kind: agent
+    loop:
+      verify:
+        deterministic: [lint, test]
+        done_when: "green tools before handoff to reviewer"
+      stop:
+        max_failed_attempts: 2
+        on_stop: system-gap
+
+  - id: verify_tools
+    kind: tool
+
+  - id: reviewer
+    kind: agent
+    # different model / seat recommended; kit does not require a vendor
+    loop:
+      verify:
+        done_when: "verdict pass|fail with evidence pointers"
+      constraints:
+        - "must not expand implementation scope"
+
+edges:
+  - id: executor-to-verify-tools
+    from: executor
+    to: verify_tools
+    kind: sequential
+    schema:
+      required: [cwd, commands]
+    context_budget:
+      strategy: "project-minimal checks only"
+    verify:
+      done_when: "exit 0 or stored report"
+    timeout:
+      hard: "15m"
+    on_error:
+      retry: { max: 0 }
+      fallback: "loop-back → executor"
+      cut_downstream: true
+    evidence:
+      must_point_to: [command, exit_code]
+    ratify_required: false
+
+  - id: executor-to-reviewer
+    from: executor
+    to: reviewer
+    kind: sequential
+    # transport hint for filesystem adapter (optional)
+    transport: file
+    schema:
+      required: [TASK, CONTEXT, CONSTRAINTS, VERIFY, paths_or_diff_stat]
+    context_budget:
+      strategy: "diff --stat + critical files; no whole-repo dump"
+    constraints:
+      - "reviewer answer is untrusted input; executor must digest"
+    verify:
+      done_when: "answer contains pass/fail list"
+    timeout:
+      hard: "45m"
+    on_error:
+      retry: { max: 1 }
+      fallback: "escalate to human"
+      cut_downstream: true
+    evidence:
+      must_point_to: [diff_path, test_report]
+      summary_ok: true
+    ratify_required: false
+
+  - id: verify-fail-loopback
+    from: verify_tools
+    to: executor
+    kind: loop-back
+    # condition: verify red — expressed in runtime adapter
+
+state:
+  keys:
+    - task
+    - verify_report
+    - review_verdict
+    - system_gaps
+
+system_gap_required: true
