@@ -40,9 +40,11 @@ packages/agent-contract-kit/
   cli/ack_settings.py  # validate / compile / summary (M1)
   cli/ack_loop.py      # verify / done-gate / wrap-gap / wall (M2)
   cli/ack_hooks.py     # opt-in install harness PreToolUse (M3)
+  cli/ack_review.py    # dual-review briefing/answer gates (M4)
   hooks/pretool-harness.py
-  skills/loop-enforcement/  # agent-facing rules (M2)
-  skills/harness-hooks/     # agent-facing install rules (M3)
+  skills/loop-enforcement/
+  skills/harness-hooks/
+  skills/dual-review-fs/
   tests/             # unit tests for CLI
   adapters/          # optional filesystem, etc.
   docs/              # PROFILES, COMPILE, LOOP, PORTABILITY
@@ -83,13 +85,19 @@ python3 packages/agent-contract-kit/cli/ack_loop.py wrap-gap --settings settings
 # optional harness hooks (requires install_hooks:true or --i-understand)
 python3 packages/agent-contract-kit/cli/ack_hooks.py install --settings settings.json --apply-project-claude
 
+# dual-review (profile dual-review|governed)
+python3 packages/agent-contract-kit/cli/ack_review.py init --settings settings.json
+python3 packages/agent-contract-kit/cli/ack_review.py handoff-gate --settings settings.json
+python3 packages/agent-contract-kit/cli/ack_review.py accept-gate --settings settings.json
+
 python3 packages/agent-contract-kit/tests/test_ack_settings.py
 python3 packages/agent-contract-kit/tests/test_ack_loop.py
 python3 packages/agent-contract-kit/tests/test_ack_hooks.py
+python3 packages/agent-contract-kit/tests/test_ack_review.py
 ```
 
-Skills: `skills/loop-enforcement/`, `skills/harness-hooks/`  
-Docs: `docs/LOOP.md`, `docs/HARNESS.md`
+Skills: loop-enforcement, harness-hooks, dual-review-fs  
+Docs: LOOP.md, HARNESS.md, GRAPH.md
 
 Graph YAML templates (`templates/solo-loop.yaml`, `dual-review.yaml`) remain illustrative until edge schemas land.
 

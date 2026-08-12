@@ -197,8 +197,8 @@ No AMH required when `memory.enabled` is false (default).
 | **M0b product docs** | §8 + COMPILE.md | **done 2026-08-12** |
 | **M1 CLI** | `cli/ack_settings.py` validate + compile | **done 2026-08-12** |
 | **M2 loop enforcement** | `cli/ack_loop.py` + skill + LOOP.md | **done 2026-08-12** |
-| **M3 harness opt-in** | `hooks/pretool-harness.py` + `ack_hooks` | **this change** |
-| **M4 graph edges** | filesystem briefing adapter for dual-review | after M2 |
+| **M3 harness opt-in** | `hooks/pretool-harness.py` + `ack_hooks` | **done 2026-08-12** |
+| **M4 graph edges** | `ack_review` filesystem dual-review | **this change** |
 | **M5 public clone** | strip private noise; license | later |
 
 `READY` in OPEN-LOOPS ≠ auto-implement. Follow BACKLOG-ACTIVATION-PROTOCOL.
