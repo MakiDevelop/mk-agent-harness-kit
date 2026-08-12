@@ -182,8 +182,12 @@
             },
             "agents": {
               "type": "object",
-              "additionalProperties": { "type": "string" },
-              "description": "Logical seat → CLI/agent id. Required when mode is dual-review or custom."
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^\\S(.*\\S)?$"
+              },
+              "description": "Logical seat → CLI/agent id. dual-review requires executor+reviewer; custom requires any non-empty map."
             }
           },
           "allOf": [
@@ -215,7 +219,14 @@
                   "agents": {
                     "type": "object",
                     "required": ["executor", "reviewer"],
-                    "additionalProperties": { "type": "string" }
+                    "properties": {
+                      "executor": { "type": "string", "minLength": 1 },
+                      "reviewer": { "type": "string", "minLength": 1 }
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 },
                 "required": ["agents"]
@@ -227,7 +238,17 @@
                 "required": ["mode"]
               },
               "then": {
-                "required": ["edges", "agents"]
+                "required": ["edges", "agents"],
+                "properties": {
+                  "agents": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
               }
             },
             {

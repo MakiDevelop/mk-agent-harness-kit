@@ -40,9 +40,7 @@ human:
 
 Agents should prefer **resolved** file over raw `settings.json` when both exist.
 
-## CLI (M1 — planned until shipped)
-
-When `cli/ack_settings.py` lands:
+## CLI (M1 — shipped)
 
 ```bash
 python3 packages/agent-contract-kit/cli/ack_settings.py validate --settings settings.json
@@ -50,7 +48,8 @@ python3 packages/agent-contract-kit/cli/ack_settings.py compile --settings setti
 python3 packages/agent-contract-kit/cli/ack_settings.py summary --settings settings.json
 ```
 
-Until then: validate with `jsonschema` against `spec/settings.schema.json`; expansion rules in PROFILES.md are normative for implementers.
+Requires: Python 3 + `jsonschema`.  
+Tests: `python3 packages/agent-contract-kit/tests/test_ack_settings.py`
 
 ## Mapping to five layers
 

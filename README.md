@@ -34,12 +34,13 @@ This kit = **what edges may carry, how failure cuts, how gaps are recorded**.
 packages/agent-contract-kit/
   README.md          # this file
   DESIGN.md          # boundaries, layers, non-goals
-  spec/              # JSON Schema (P0 — stubs)
+  spec/              # settings.schema.json (+ future edge schemas)
   templates/         # YAML examples (solo + dual-review)
   examples/          # dogfood exports (sanitized)
-  cli/               # ack validate / gap (P1 — empty)
+  cli/ack_settings.py  # validate / compile / summary (M1)
+  tests/             # unit tests for CLI
   adapters/          # optional filesystem, etc.
-  docs/              # portable docs only (no home-lab IPs)
+  docs/              # PROFILES, COMPILE, PORTABILITY
 ```
 
 ## Relation to mk-agentos
@@ -66,8 +67,10 @@ Profile expansion: `docs/PROFILES.md`
 In-package `settings.example.json` is **self-test only** (fail-closed placeholder verify); do not copy to repo root.
 
 ```bash
-# validate settings (when CLI present)
 python3 packages/agent-contract-kit/cli/ack_settings.py validate --settings settings.json
+python3 packages/agent-contract-kit/cli/ack_settings.py compile --settings settings.json -o .mk-agentos/settings.resolved.json
+python3 packages/agent-contract-kit/cli/ack_settings.py summary --settings settings.json
+python3 packages/agent-contract-kit/tests/test_ack_settings.py
 ```
 
 Graph YAML templates (`templates/solo-loop.yaml`, `dual-review.yaml`) remain illustrative until edge schemas land.
