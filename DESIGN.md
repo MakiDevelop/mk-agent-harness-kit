@@ -136,16 +136,70 @@ MVP success **does not** require adapters — validate-only is enough.
 
 ---
 
-## 8. Roadmap (activation-gated)
+## 8. Product UX: clone + one settings.json
+
+**North star (Maki 2026-08-12):**
+
+```text
+git clone mk-agentos
+cp settings.example.json settings.json   # only user file
+# edit profile / verify.commands / project.name
+→ enjoy prompt / context / harness / loop / graph engineering
+```
+
+### 8.1 User surface
+
+| Artifact | Role |
+|----------|------|
+| Repo-root `settings.example.json` | **Canonical** template |
+| `settings.json` | User copy (gitignore recommended) |
+| `spec/settings.schema.json` | Validation |
+| `docs/PROFILES.md` | Expansion + **Normalization** (source of truth for effective config) |
+
+Users never need home-lab IPs, AMH, or multi-agent seats for `solo` / `solo-strict`.
+
+### 8.2 Layer compiler (conceptual)
+
+```text
+settings.json
+  → load + JSON Schema validate
+  → expand profile (PROFILES.md)
+  → apply Normalization precedence
+  → emit effective settings (resolved JSON)
+  → map to:
+       prompt pack ids
+       context boot list
+       harness confirms + flags
+       loop policy (verify, wall, gap)
+       graph document ref (builtin:solo | builtin:dual-review | path)
+```
+
+Solo = `graph.mode: solo` = **minimal graph** (loop only).  
+Dual-review = same engine + edge contracts between executor and reviewer.
+
+### 8.3 Acceptance (product)
+
+On a clean machine with only git + Python 3 + a coding agent:
+
+1. Clone repo, copy root `settings.example.json` → `settings.json`
+2. Set real `verify.commands` for the target project
+3. `ack_settings.py validate` + `compile` succeed
+4. Agent following effective loop **must not** claim done while verify fails
+5. Wrap/wall emits `system-gap: none` or concrete gaps  
+No AMH required when `memory.enabled` is false (default).
+
+### 8.4 Roadmap (activation-gated)
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
-| **Skeleton** | this tree + DESIGN + README | **done 2026-08-12** |
-| **P0** | JSON Schema drafts + 2 templates filled | blocked on Maki ratify OL-022 |
-| **P1** | `ack validate` CLI + fixtures/tests | after P0 |
-| **P2** | freshness check (generic paths) + gap report | after P1 |
-| **P3** | dogfood: export wrap-up / council as examples | after P1 |
-| **P4** | public extract decision (subtree or new repo) | after portable proof |
+| **Skeleton** | tree + DESIGN + README | **done 2026-08-12** |
+| **M0 settings** | schema + examples + PROFILES + README UX | **done 2026-08-12** (Codex PASS) |
+| **M0b product docs** | this §8 + COMPILE.md | **this commit** |
+| **M1 CLI** | `cli/ack_settings.py` validate + compile | next |
+| **M2 loop enforcement** | portable skill/hook pack driven by effective settings | after M1 |
+| **M3 harness opt-in** | `install_hooks` portable | after M2 |
+| **M4 graph edges** | filesystem briefing adapter for dual-review | after M2 |
+| **M5 public clone** | strip private noise; license | later |
 
 `READY` in OPEN-LOOPS ≠ auto-implement. Follow BACKLOG-ACTIVATION-PROTOCOL.
 
@@ -155,10 +209,11 @@ MVP success **does not** require adapters — validate-only is enough.
 
 | Metric | Target |
 |--------|--------|
-| Solo user | describe loop + verify + gap in &lt; 5 minutes |
-| Multi user | one dual-review graph validates with full edge contracts |
-| Portability | clone kit dir alone; no parent required for validate |
-| Attention (L4) | core surface stays small; no dashboard in MVP |
+| Clone UX | copy one JSON; no second config file required |
+| Solo user | loop + verify + gap in &lt; 5 minutes |
+| Multi user | dual-review mode + agents map validates |
+| Portability | validate/compile without home-lab services |
+| Attention (L4) | profiles hide complexity; advanced keys optional |
 
 Ultimate (parent OS metric still holds):
 
