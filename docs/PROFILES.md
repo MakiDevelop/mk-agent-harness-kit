@@ -13,7 +13,7 @@ cp settings.example.json settings.json   # ROOT file only
 ```
 
 - **Canonical example:** repo-root `settings.example.json`  
-  (`$schema` → `packages/agent-contract-kit/spec/settings.schema.json`)
+  (`$schema` → `packages/agent-contract-kit/src/ack/_assets/spec/settings.schema.json`)
 - Package-local `packages/agent-contract-kit/settings.example.json` is for **in-package tests only**; do not copy it to repo root (broken relative `$schema`).
 
 ## Normalization (effective config) — precedence

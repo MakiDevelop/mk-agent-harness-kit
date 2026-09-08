@@ -5,7 +5,7 @@
 | Input | Required |
 |-------|----------|
 | `settings.json` (or `--settings` path) | yes |
-| `spec/settings.schema.json` | yes (shipped) |
+| `src/ack/_assets/spec/settings.schema.json` | yes (shipped) |
 | `docs/PROFILES.md` rules | yes (implemented in compiler code, not parsed from MD) |
 
 ## Outputs

@@ -21,4 +21,6 @@ This package must remain usable **without** the parent `mk-agentos` tree.
 python3 packages/agent-contract-kit/cli/ack_portability_lint.py
 ```
 
-Exit 0 required before publishing kit changes. Scans `cli/`, `hooks/`, `tests/`, `templates/`, `skills/`, `spec/` (not denylist docs).
+Exit 0 required before publishing kit changes. In a checkout it scans the logical
+`cli/`, `hooks/`, `tests/`, `src/ack/_assets/templates/`, `skills/`, and `spec/`
+sets, with shipped assets located under `src/ack/_assets/` (not denylist docs).

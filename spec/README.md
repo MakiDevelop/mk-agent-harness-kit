@@ -9,4 +9,4 @@ P0 placeholders. Full schemas land after OL-022 / B-025 ratify.
 | `system-gap.schema.json` | Gap record / report |
 | `graph.schema.json` | GraphDocument (nodes + edges + state) |
 
-Until then, treat YAML under `templates/` as **illustrative**, not validated.
+Until then, treat YAML under `src/ack/_assets/templates/` as **illustrative**, not validated.

@@ -33,7 +33,7 @@ python3 packages/agent-contract-kit/cli/ack_hooks.py install \
 
 ```text
 {project.root}/.mk-agentos/
-  hooks/pretool-harness.py
+  src/ack/_assets/hooks/pretool-harness.py
   settings.resolved.json
   claude-settings.fragment.json
 {project.root}/.claude/settings.json   # only with --apply-project-claude
