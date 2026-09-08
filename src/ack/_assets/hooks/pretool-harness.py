@@ -18,13 +18,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-
-_CLI = Path(__file__).resolve().parents[1] / "cli"
-if str(_CLI) not in sys.path:
-    sys.path.insert(0, str(_CLI))
 
 
 def _deny(reason: str) -> None:
@@ -72,6 +70,29 @@ def find_resolved() -> Path | None:
     return None
 
 
+def compile_settings(path: Path) -> dict[str, Any]:
+    """Compile settings using the package, or the installed ``ack`` command."""
+    try:
+        from ack import settings as ack_settings
+
+        return ack_settings.compile_settings(ack_settings.load_json(path))
+    except Exception as import_error:
+        ack_bin = shutil.which("ack") or "ack"
+        try:
+            proc = subprocess.run(
+                [ack_bin, "settings", "compile", "--settings", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "ack settings compile failed").strip()
+                raise RuntimeError(f"cannot compile settings: {detail}") from import_error
+            return json.loads(proc.stdout)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"cannot compile settings: {exc}") from import_error
+
+
 def load_effective() -> dict[str, Any]:
     resolved = find_resolved()
     if resolved is not None:
@@ -82,13 +103,7 @@ def load_effective() -> dict[str, Any]:
 
     settings_env = os.environ.get("ACK_SETTINGS")
     if settings_env and Path(settings_env).is_file():
-        try:
-            import ack_settings
-
-            raw = ack_settings.load_json(Path(settings_env))
-            return ack_settings.compile_settings(raw)
-        except Exception:
-            pass
+        return compile_settings(Path(settings_env))
 
     # Safe defaults when no settings (fail closed on worst ops only)
     return {
@@ -229,7 +244,10 @@ def main() -> None:
     if not command:
         _allow()
 
-    effective = load_effective()
+    try:
+        effective = load_effective()
+    except RuntimeError as exc:
+        _ask(str(exc))
     check_bash(command, effective)
     _allow()
 
