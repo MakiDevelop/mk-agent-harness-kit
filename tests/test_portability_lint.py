@@ -34,12 +34,20 @@ class TestPortabilityLint(unittest.TestCase):
         repo_names = {name for _, name in repo[2]}
         self.assertTrue(any(name.startswith("tests/") for name in repo_names))
         self.assertTrue(any(name.startswith("skills/") for name in repo_names))
+        self.assertIn("src/ack/_assets/bin/cap", repo_names)
         with tempfile.TemporaryDirectory() as tmp:
             proc = subprocess.run(
                 [sys.executable, *LINT], cwd=tmp, capture_output=True, text=True, check=False
             )
+            previous = Path.cwd()
+            try:
+                os.chdir(tmp)
+                package_names = {name for _, name in lint.iter_files()[2]}
+            finally:
+                os.chdir(previous)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertTrue(proc.stdout.startswith("PORTABILITY LINT MODE: package mode"))
+        self.assertIn("_assets/bin/cap", package_names)
 
     def test_root_settings_matches_packaged_asset(self) -> None:
         root = KIT / "settings.example.json"

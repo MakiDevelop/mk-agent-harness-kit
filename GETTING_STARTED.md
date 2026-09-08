@@ -47,4 +47,18 @@ Run the portable-source check from a checkout:
 ack portability-lint
 ```
 
-`ack guard`, `ack evidence`, `ack lint`, `cap`, and `ack settings init` are future roadmap items.
+## Destructive-command gateway
+
+`cap` is installed beside `ack` and records plans and audit events under
+`$HOME/.agent_audit/` without changing that state location:
+
+```bash
+cap classify rsync -av /source/ /destination/  # inspect the risk level
+cap check rsync -av /source/ /destination/     # create a plan and dry-run
+cap go P-YYYYMMDD-xxxxxxxx                     # human confirmation before execution
+```
+
+Plans are written to `$HOME/.agent_audit/plans/`; audit JSONL records are written to
+`$HOME/.agent_audit/logs/`. `cap go` requires an interactive human confirmation token.
+
+`ack guard`, `ack evidence`, `ack lint`, and `ack settings init` are future roadmap items.

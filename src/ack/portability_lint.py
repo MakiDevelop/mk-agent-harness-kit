@@ -75,8 +75,15 @@ def find_repo_root(cwd: Path) -> Path | None:
 def iter_files() -> tuple[str, Path, list[tuple[Path, str]]]:
     root = find_repo_root(Path.cwd())
     if root is None:
-        asset_files = [(p, p.relative_to(KIT).as_posix()) for p in KIT.joinpath("_assets").rglob("*")
-                       if p.is_file() and p.suffix in {".py", ".md", ".json", ".yaml", ".yml", ".sh", ".txt"}]
+        asset_files = [
+            (p, p.relative_to(KIT).as_posix())
+            for p in KIT.joinpath("_assets").rglob("*")
+            if p.is_file()
+            and (
+                p.parent == KIT / "_assets" / "bin"
+                or p.suffix in {".py", ".md", ".json", ".yaml", ".yml", ".sh", ".txt"}
+            )
+        ]
         return "package", KIT, asset_files
 
     # Preserve the old logical scan set while mapping shipped assets to their
@@ -97,6 +104,9 @@ def iter_files() -> tuple[str, Path, list[tuple[Path, str]]]:
                 files.extend(p for p in d.rglob("*") if p.is_file() and p.suffix in {
                     ".py", ".md", ".json", ".yaml", ".yml", ".sh", ".txt",
                 })
+    asset_bin = root / "src" / "ack" / "_assets" / "bin"
+    if asset_bin.is_dir():
+        files.extend(p for p in asset_bin.iterdir() if p.is_file())
     for name in SCAN_ROOT_FILES:
         p = root / name
         if p.is_file():
