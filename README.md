@@ -11,8 +11,10 @@
 
 This 0.1.0 release provides `ack settings`, `ack loop`, `ack review`, `ack hooks`,
 `ack portability-lint`, the `cap` destructive-command gateway, and `ack guard`.
-`ack guard read-tracker`, `ack guard evidence`, and `ack guard first-read-lock` are
-available; the remaining guards, `ack lint`, and `ack settings init` remain planned.
+`ack guard read-tracker`, `ack guard evidence`, `ack guard first-read-lock`,
+`ack guard council-dispatch-guard`, `ack guard preset-auto-upgrade`, and
+`ack guard session-onboarding` are available; the remaining guards, `ack lint`, and
+`ack settings init` remain planned.
 
 ## The Problem
 

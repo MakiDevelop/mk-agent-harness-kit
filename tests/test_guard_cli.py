@@ -39,6 +39,16 @@ class TestGuards(unittest.TestCase):
             self.assertEqual(bad.returncode, 1)
             self.assertIn("line 2", bad.stderr)
 
+    def test_evidence_verify_lists_all_breaks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for n in (1, 2, 3):
+                guard("evidence", root, {"tool_name": "Read", "tool_input": {"n": n}})
+            vault = root / ".mk-agentos/evidence/vault.jsonl"
+            lines = vault.read_text().splitlines(); lines[0] = "not json"; lines[2] = lines[2].replace('"n":3', '"n":9'); vault.write_text("\n".join(lines) + "\n")
+            out = subprocess.run([sys.executable, "-m", "ack.cli", "guard", "evidence", "--project-root", str(root), "--verify"], text=True, capture_output=True, env={**os.environ, "PYTHONPATH": str(KIT / "src")})
+            self.assertEqual(out.returncode, 1); self.assertIn("line 1", out.stderr); self.assertIn("line 3", out.stderr); self.assertIn("3 break(s)", out.stderr)
+
     def test_first_read_lock_cases(self) -> None:
         payload = {"tool_name": "Edit", "tool_input": {}}
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,3 +111,73 @@ class TestGuards(unittest.TestCase):
             p = subprocess.run(["bash", str(KIT / "adapters/claude-code/ack-guard-hook.sh"), "first-read-lock"], input='{"tool_name":"Edit"}', text=True, capture_output=True, env={"PATH":"/usr/bin:/bin", "ACK_EVIDENCE_DIR":str(evidence), "HOME":str(root)}, check=False)
             self.assertEqual(p.returncode, 0)
             self.assertTrue((evidence / "guard-errors.log").is_file())
+
+    def test_council_dispatch_guard_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cases = [("codex exec x", "deny"), ("timeout 30 codex exec x", "deny"), ("timeout 30s codex exec x", "deny"), ("nice -n 10 gemini --print x", "deny"), ("/usr/local/bin/codex exec x", "deny"), ("FOO=1 gemini -p x", "deny"), ("agy --prompt=x", "deny"), ("codex --help", "allow"), ("council-dispatch --seat codex", "allow"), ("cat <<'EOF'\ncouncil-dispatch\nEOF", "allow"), ('git commit -m "codex exec"', "allow"), ("codex exec x", "noop")]
+            for command, decision in cases:
+                tool = "Bash" if decision != "noop" else "Read"
+                out = json.loads(guard("council-dispatch-guard", root, {"tool_name": tool, "tool_input": {"command": command}}).stdout)
+                self.assertEqual(out["decision"], decision, command)
+
+    def test_council_dispatch_guard_honours_custom_blocked_clis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); settings = root / "settings.json"
+            settings.write_text(json.dumps({"profile": "solo", "layers": {"harness": {"council": {"blocked_clis": {"claude": ["-p"]}}}}}))
+            payload = {"tool_name": "Bash", "tool_input": {"command": "claude -p 'do it'"}}
+            out = json.loads(guard("council-dispatch-guard", root, payload, "--settings", str(settings)).stdout)
+            self.assertEqual(out["decision"], "deny")
+            self.assertIn("claude", out["reason"])
+            # defaults still apply alongside the custom entry
+            out = json.loads(guard("council-dispatch-guard", root, {"tool_name": "Bash", "tool_input": {"command": "gemini -p x"}}, "--settings", str(settings)).stdout)
+            self.assertEqual(out["decision"], "deny")
+
+    def test_preset_auto_upgrade_and_preserves_other_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "evidence").mkdir()
+            original = "# keep\nproject: demo\npreset: light # old\ntasks:\n  - id: one\n    status: BLOCKED\n    name: wait\n"
+            (root / "project-state.yaml").write_text(original)
+            out = json.loads(guard("preset-auto-upgrade", root, {}).stdout)
+            self.assertEqual(out["decision"], "warn")
+            self.assertEqual((root / "project-state.yaml").read_text().replace("preset: standard\n", "preset: light # old\n"), original)
+            self.assertEqual(json.loads((root / "evidence/decision-log.jsonl").read_text())["to"], "standard")
+
+    def test_preset_auto_upgrade_other_paths_and_noops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "evidence").mkdir()
+            (root / "project-state.yaml").write_text("preset: standard\ntasks: []\n")
+            (root / "evidence/attempt-log.jsonl").write_text('{"status":"failed"}\n{"status":"failed"}\n')
+            self.assertEqual(json.loads(guard("preset-auto-upgrade", root, {}).stdout)["decision"], "warn")
+            (root / "project-state.yaml").write_text("preset: standard\ntasks: []\n")
+            (root / "evidence/attempt-log.jsonl").write_text("")
+            (root / "evidence/progress.json").write_text('{"file_edits":{"a":3}}')
+            self.assertEqual(json.loads(guard("preset-auto-upgrade", root, {}).stdout)["decision"], "warn")
+            (root / "project-state.yaml").write_text("preset: governed\n")
+            self.assertEqual(json.loads(guard("preset-auto-upgrade", root, {}).stdout)["decision"], "noop")
+            self.assertEqual(json.loads(guard("preset-auto-upgrade", Path(tmp) / "none", {}).stdout)["decision"], "noop")
+
+    def test_session_onboarding_capsule_noop_and_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); evidence = root / "evidence"; evidence.mkdir(); (evidence / ".session-reads").write_text("old\n")
+            (root / "project-state.yaml").write_text("project: demo\npreset: standard\ntasks:\n  - id: a\n    status: BLOCKED\n    name: stalled\n    blocked_reason: waiting\n")
+            (evidence / "attempt-log.jsonl").write_text('{"status":"failed","ts":"t","description":"bad"}\n')
+            (evidence / "decision-log.jsonl").write_text('{"type":"challenge","status":"open","challenger":"c","description":"q"}\n')
+            out = json.loads(guard("session-onboarding", root, {}, env={"ACK_EVIDENCE_DIR": str(evidence)}).stdout)
+            self.assertEqual(out["decision"], "allow"); self.assertIn("Project: demo", out["context"]); self.assertEqual((evidence / ".session-reads").read_text(), "")
+            self.assertEqual(json.loads(guard("session-onboarding", Path(tmp) / "none", {}, env={"ACK_EVIDENCE_DIR": str(evidence)}).stdout)["decision"], "noop")
+            (root / "project-state.yaml").write_text("project: demo\npreset: standard\ntasks:\n" + "".join(f"  - id: {i}\n    status: BLOCKED\n    name: {'x'*1000}\n" for i in range(20)))
+            self.assertLessEqual(len(json.loads(guard("session-onboarding", root, {}, env={"ACK_EVIDENCE_DIR": str(evidence)}).stdout)["context"].encode()), 8192)
+
+    def test_adapter_session_context_and_env_evidence_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "project-state.yaml").write_text("project: demo\npreset: light\n")
+            bin_dir = root / "bin"; bin_dir.mkdir()
+            ack = bin_dir / "ack"; ack.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} -m ack.cli \"$@\"\n"); ack.chmod(0o755)
+            env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"], "PYTHONPATH": str(KIT / "src"), "ACK_EVIDENCE_DIR": str(root / "env-evidence"), "CLAUDE_PROJECT_DIR": str(root), "HOME": str(root)}
+            settings = root / "settings.json"; settings.write_text('{"profile":"solo","layers":{"harness":{"evidence_dir":"settings-evidence"}}}')
+            self.assertTrue((root / "env-evidence/.session-reads").parent.exists() is False)
+            p = guard("read-tracker", root, {"tool_name":"Read","tool_input":{"file_path":"x"}}, "--settings", str(settings), env=env)
+            self.assertEqual(p.returncode, 0); self.assertTrue((root / "env-evidence/.session-reads").is_file())
+            p = subprocess.run(["bash", str(KIT / "adapters/claude-code/ack-guard-hook.sh"), "session-onboarding"], input='{"hook_event_name":"SessionStart"}', text=True, capture_output=True, env=env, cwd=root)
+            self.assertIn("additionalContext", p.stdout)

@@ -39,11 +39,19 @@ legacy vault is needed. Example `settings.json` wiring:
     "PreToolUse": [{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh first-read-lock"}]}],
     "PostToolUse": [
       {"matcher":"Read","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh read-tracker"}]},
+      {"matcher":"Bash|Edit|Write","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh preset-auto-upgrade"}]},
       {"matcher":"*","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh evidence"}]}
+    ],
+    "SessionStart": [
+      {"hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh session-onboarding"}]}
     ]
   }
 }
 ```
+
+Add `{"matcher":"Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh council-dispatch-guard"}]}`
+to `PreToolUse` for Council dispatch blocking. The adapter takes `hook_event_name` from
+the payload, or maps each guard to its documented event when absent.
 
 If `ack` itself errors, the adapter allows the tool and appends the diagnostic to
 `guard-errors.log`; it does not turn adapter failure into a user lockout.
