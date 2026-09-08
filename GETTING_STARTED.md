@@ -27,6 +27,13 @@ ack loop done-gate --settings settings.json
 ack loop wrap-gap --settings settings.json
 ```
 
+`done-gate` refuses "done" until `verify.commands` pass. After the second consecutive
+failure it prints `WALL` plus a `SYSTEM_GAP` line: stop changing code, show that line to
+the human operator, and only then fix the cause. Once the fix is in, run `done-gate`
+again; a passing run clears the counter (or clear it explicitly with
+`ack loop reset --settings settings.json`). The `--settings` flag is required on every
+`ack` command in 0.1.0; a default of `./settings.json` is planned.
+
 ## Optional commands
 
 Install the Claude Code harness hook only when `layers.harness.install_hooks` is true:

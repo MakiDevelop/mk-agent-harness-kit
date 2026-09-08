@@ -51,3 +51,9 @@ preserved via `git subtree split`), then made installable and given the guards.
   `state-validator`, as the legacy hook did.
 - `council-dispatch-guard` is string analysis, not a shell parser (legacy parity).
 - The Claude adapter script is not part of the wheel yet; use it from a checkout.
+- Found by the first non-Claude dogfood run (Codex, see `adapters/codex/README.md`):
+  `--settings` has no default, so a bare `ack loop done-gate` exits 2 with an argparse
+  error; `cap check` still exits 0 when its plan/audit write under `$HOME/.agent_audit`
+  fails; the WALL message says STOP but the recovery path (`ack loop reset` after the
+  human has seen the system-gap) is only documented in GETTING_STARTED. All three are
+  0.1.1 candidates.
