@@ -139,6 +139,11 @@
             "install_hooks": {
               "type": "boolean",
               "description": "Opt-in portable hooks; never silent-install into user global config."
+            },
+            "evidence_dir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Optional evidence state directory, relative to the project root when not absolute."
             }
           }
         },

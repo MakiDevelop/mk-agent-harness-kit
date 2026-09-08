@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 
-from . import hooks, loop, portability_lint, review, settings
+from . import guard, hooks, loop, portability_lint, review, settings
 
 Command = Callable[[list[str] | None], int]
 COMMANDS: dict[str, Command] = {
@@ -14,6 +14,7 @@ COMMANDS: dict[str, Command] = {
     "review": review.main,
     "hooks": hooks.main,
     "portability-lint": portability_lint.main,
+    "guard": guard.main,
 }
 
 
