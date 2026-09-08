@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -50,11 +51,14 @@ def run(_: dict[str, Any], context: GuardContext) -> dict[str, Any]:
     if (context.project_root / "evidence" / "decision-log.jsonl").is_file(): lines.append("  3. evidence/decision-log.jsonl")
     if (context.project_root / "context-index.yaml").is_file(): lines.append("  4. context-index.yaml")
     lines.append("  ⚠️ evidence/handoff.md — read LAST (may have optimistic bias)")
-    settings = getattr(context, "settings", {})
-    extra = settings.get("layers", {}).get("harness", {}).get("onboarding", {}).get("extra_command") if isinstance(settings, dict) else None
-    if isinstance(extra, str) and extra:
-        # extra_command is trusted settings input; still bound its runtime so a
-        # hung command cannot block SessionStart indefinitely.
+    # Security: settings.json lives in the project and is therefore
+    # repository-controlled. A command that runs automatically at SessionStart
+    # must never come from there (a malicious clone could execute arbitrary
+    # code). Only the operator's own environment — set in their hook wiring,
+    # outside the repo — may supply it.
+    extra = os.environ.get("ACK_ONBOARDING_EXTRA_COMMAND", "")
+    if isinstance(extra, str) and extra.strip():
+        # Bound the runtime so a hung command cannot block SessionStart.
         try:
             result = subprocess.run(extra, shell=True, cwd=context.project_root, text=True, capture_output=True, check=False, timeout=10)
             if result.returncode == 0 and result.stdout.strip(): lines.append(result.stdout.strip())

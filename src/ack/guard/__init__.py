@@ -17,7 +17,7 @@ class GuardContext:
         self.evidence_dir = evidence_dir
 
 
-from . import council_dispatch_guard, evidence, first_read_lock, preset_auto_upgrade, read_tracker, session_onboarding
+from . import council_dispatch_guard, evidence, first_read_lock, no_progress_guard, preset_auto_upgrade, progress_tracker, read_tracker, session_onboarding, state_validator
 
 
 def _noop(_: dict[str, Any], __: GuardContext) -> dict[str, Any]:
@@ -29,11 +29,11 @@ GUARDS: dict[str, Guard] = {
     "evidence": evidence.run,
     "first-read-lock": first_read_lock.run,
     "council-dispatch-guard": council_dispatch_guard.run,
-    "no-progress-guard": _noop,
+    "no-progress-guard": no_progress_guard.run,
     "preset-auto-upgrade": preset_auto_upgrade.run,
-    "progress-tracker": _noop,
+    "progress-tracker": progress_tracker.run,
     "session-onboarding": session_onboarding.run,
-    "state-validator": _noop,
+    "state-validator": state_validator.run,
 }
 
 
