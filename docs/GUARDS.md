@@ -51,6 +51,12 @@ own hook wiring), never from `settings.json`: settings live in the repository, a
 command that runs automatically at SessionStart must not be repository-controlled.
 It runs with a 10-second timeout; failures and timeouts are ignored.
 
+> **Upgrading from an earlier 0.1.0 checkout:** `layers.harness.onboarding.extra_command`
+> was removed from the schema for the reason above. A `settings.json` that still carries
+> it fails `ack settings validate` with "Additional properties are not allowed
+> ('onboarding' was unexpected)". Delete the key and export
+> `ACK_ONBOARDING_EXTRA_COMMAND` in your hook wiring instead.
+
 ## `progress.json` schema v2
 
 The tracker writes alongside `vault.jsonl`: `{"schema_version":2,"sessions":{"<session>":{"file_edits":{},"failure_by_command":{},"call_hashes":{}}}}`. It uses a locked temporary-file rename. Call keys use SHA-256 first 16 hex characters over `tool_name + ":" + json.dumps(tool_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`; this is jq `-Sc` compatible. Thresholds live at `layers.harness.no_progress` (12/6/3/2), with `MK_NO_PROGRESS_EDIT_BLOCK` and `MK_NO_PROGRESS_EDIT_WARN` taking precedence.

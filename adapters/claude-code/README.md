@@ -54,9 +54,10 @@ legacy vault is needed. Example `settings.json` wiring:
 }
 ```
 
-Add `{"matcher":"Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh council-dispatch-guard"}]}`
-to `PreToolUse` for Council dispatch blocking. The adapter takes `hook_event_name` from
-the payload, or maps each guard to its documented event when absent.
+The adapter takes `hook_event_name` from the payload, or maps each guard to its
+documented event when absent. `ACK_ONBOARDING_EXTRA_COMMAND` (optional) may be exported
+in the same wiring to append one operator-supplied line to the SessionStart capsule; it
+is deliberately not a `settings.json` key.
 
 If `ack` itself errors, the adapter allows the tool and appends the diagnostic to
 `guard-errors.log`; it does not turn adapter failure into a user lockout.

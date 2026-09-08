@@ -45,6 +45,16 @@ class TestGuards(unittest.TestCase):
             state = json.loads((root / ".mk-agentos/evidence/progress.json").read_text())
             self.assertEqual(state["sessions"]["s4"]["failure_by_command"], {})
 
+    def test_progress_call_hash_golden_matches_legacy_jq(self) -> None:
+        # Golden value computed with the legacy pipeline on 2026-09-08:
+        #   printf 'Bash:%s' "$(jq -Sc . input.json)" | shasum -a 256 | cut -c1-16
+        # for input {"z":1,"a":{"路徑":"/tmp/測試 \"q\"","n":[3,1,2]},"m":null}.
+        # If this ever changes, existing progress.json files stop matching.
+        from ack.guard.progress_tracker import compact_sorted, hash16
+        tool_input = {"z": 1, "a": {"路徑": '/tmp/測試 "q"', "n": [3, 1, 2]}, "m": None}
+        self.assertEqual(compact_sorted(tool_input), '{"a":{"n":[3,1,2],"路徑":"/tmp/測試 \\"q\\""},"m":null,"z":1}')
+        self.assertEqual(hash16("Bash:" + compact_sorted(tool_input)), "54c76ca0fab65b37")
+
     def test_state_validator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); state = root / "project-state.yaml"; state.write_text("tasks: []\n")
