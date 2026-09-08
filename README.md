@@ -1,127 +1,99 @@
-# agent-contract-kit
+# mk-agent-harness-kit
 
-> **Status:** incubator skeleton (2026-08-12)  
-> **Host repo:** `mk-agentos` (private OS / lab)  
-> **Goal:** portable **contracts + loops + gaps** for single-agent and multi-agent systems — not another runtime.
+> **Your AI coding agent says "done" when it isn't, edits the same file nine times, and runs `rm -rf` on a guess.**
+> ACK stops that — with contracts and gates your agent can't talk its way around, not with a longer prompt.
 
-## What this is
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A thin kit for describing and validating how agents work:
+---
 
-| Concept | Single agent | Multi-agent |
-|---------|--------------|-------------|
-| **Node** | one worker | specialized workers / tools / gates |
-| **Loop** | do → verify → stop | inside each node |
-| **Edge** | optional self-loop | handoffs with contracts |
-| **System gap** | harness holes | harness + graph holes |
+## Status
 
-**Loop is the minimal graph** (one node, optional edge back to itself).  
-Same schemas. Same CLI. No second product.
+This 0.1.0 release provides `ack settings`, `ack loop`, `ack review`, `ack hooks`,
+and `ack portability-lint`. The roadmap items `ack guard`, `ack evidence`, `ack lint`,
+`cap`, and `ack settings init` are not implemented yet.
 
-## What this is not
+## The Problem
 
-- Not a model API wrapper  
-- Not a replacement for LangGraph / AutoGen / Crew  
-- Not a memory backend (AMH / memhall stay outside)  
-- Not Maki’s personal OS (that is the parent `mk-agentos` repo)
+Everyone who runs an agent for more than an afternoon has said these sentences out loud:
 
-LangGraph (etc.) = **how the graph runs**.  
-This kit = **what edges may carry, how failure cuts, how gaps are recorded**.
+1. "You didn't run the tests. Don't tell me it's done."
+2. "You've edited that file six times. Stop and tell me what's wrong."
+3. "Read the config before you change it."
+4. "Don't push. Don't delete. Ask first."
+5. "I told you that yesterday."
+
+Prompts don't fix this. The agent agrees, then forgets. What fixes it is a **gate the agent has to pass**, enforced by a program that doesn't care how confident the agent sounds.
+
+ACK is that gate. It doesn't run your agent. It sits next to whatever agent you already use — Claude Code, Codex, Gemini CLI, a local model — and refuses to let it claim what it can't prove.
+
+---
+
+## What ACK Does
+
+One `settings.json`. One command `ack`. Everything it decides is written to `.mk-agentos/` as plain JSON you can read and diff.
+
+```
+ack settings validate   → your settings.json against the schema; profile invariants checked
+ack loop done-gate      → runs YOUR verify commands; "done" is refused until they pass
+ack loop wrap-gap       → prints the system-gap lines a wrap-up must carry after a wall
+ack review accept-gate  → two-agent review over the filesystem; self-approval refused
+ack hooks install       → opt-in Claude Code PreToolUse hook: blocks force-push / rm -rf, asks before push, delete, deploy, secrets
+ack portability-lint    → the kit's own check that nothing home-lab-specific leaked in
+```
+
+Roadmap (not in 0.1.0): `ack guard` (no-progress, first-read, state machine), `ack evidence` (hash-chained tool log), `ack lint` (rule-file enforcement audit), `cap` (destructive-command gateway), `ack settings init`.
+
+Pick a profile: `solo` (one agent, minimal), `solo-strict`, `dual-review` (executor + reviewer), `governed` (human acceptance gate). Upgrade is automatic when scope grows; downgrade needs a human.
+
+**What ACK is not:** not a runtime, not a memory server, not a prompt library. Memory is [AMH](https://github.com/MakiDevelop/agent-memory-hall)'s job and is optional here. Dispatching work to other agents is a separate tool.
+
+---
+
+## Quick Start (5 minutes)
+
+```bash
+pipx install .                           # from this repository; puts `ack` on PATH
+cd your-project
+cp /path/to/settings.example.json settings.json
+# edit settings.json: set verify.commands to your real test / lint / typecheck
+ack settings validate --settings settings.json
+ack loop done-gate --settings settings.json
+```
+
+Wire it to your agent (one block in `~/AGENTS.md`, works for any agent that reads it):
+
+```markdown
+## Harness
+Before claiming a task is done: run `ack loop done-gate --settings settings.json`. If it fails, you are not done.
+```
+
+Claude Code users can additionally install hooks that call the same commands automatically:
+
+```bash
+# set layers.harness.install_hooks: true in settings.json first
+ack hooks install --settings settings.json --apply-project-claude
+```
+
+The hook reads the same compiled settings `ack` writes to `.mk-agentos/`; uninstalling it changes nothing about what `ack loop` or `ack review` decide.
+
+---
 
 ## Layout
 
-```text
-packages/agent-contract-kit/
-  README.md          # this file
-  DESIGN.md          # boundaries, layers, non-goals
-  spec/              # settings.schema.json (+ future edge schemas)
-  templates/         # YAML examples (solo + dual-review)
-  examples/          # dogfood exports (sanitized)
-  cli/ack_settings.py  # validate / compile / summary (M1)
-  cli/ack_loop.py      # verify / done-gate / wrap-gap / wall (M2)
-  cli/ack_hooks.py     # opt-in install harness PreToolUse (M3)
-  cli/ack_review.py    # dual-review briefing/answer gates (M4)
-  hooks/pretool-harness.py
-  skills/loop-enforcement/
-  skills/harness-hooks/
-  skills/dual-review-fs/
-  tests/             # unit tests for CLI
-  adapters/          # optional filesystem, etc.
-  docs/              # PROFILES, COMPILE, LOOP, PORTABILITY
+```
+settings.json          what you edit
+.mk-agentos/           what ack writes (state and review sessions) — commit or ignore, your call
+src/ack/_assets/spec/settings.schema.json   shipped schema (also validates settings.json)
 ```
 
-## Relation to mk-agentos
+Full walkthrough: **[GETTING_STARTED.md](GETTING_STARTED.md)** · Design and non-goals: **[DESIGN.md](DESIGN.md)**
 
-| Parent (`mk-agentos`) | This package |
-|-----------------------|--------------|
-| Personal agent OS, hooks, board, council-dispatch | Portable contract layer |
-| Dogfood & hard enforcement | Spec + validate + templates |
-| May stay private | Intended extractable / public later |
+---
 
-**Rule:** OS may call kit; kit must not depend on OS paths (`~/.claude`, mini2, 91app, …).
+## Related
 
-## Quick start (settings-first)
+- [agent-memory-hall](https://github.com/MakiDevelop/agent-memory-hall) — what the agent remembers between sessions
+- [mk-agentos](https://github.com/MakiDevelop/mk-agentos) — the lab this kit was extracted from
 
-From **repo root** (canonical):
-
-```bash
-cp settings.example.json settings.json
-# edit verify.commands — must be real checks for solo-strict+
-```
-
-Schema: `spec/settings.schema.json`  
-Profile expansion: `docs/PROFILES.md`  
-In-package `settings.example.json` is **self-test only** (fail-closed placeholder verify); do not copy to repo root.
-
-```bash
-python3 packages/agent-contract-kit/cli/ack_settings.py validate --settings settings.json
-python3 packages/agent-contract-kit/cli/ack_settings.py compile --settings settings.json -o .mk-agentos/settings.resolved.json
-python3 packages/agent-contract-kit/cli/ack_settings.py summary --settings settings.json
-
-# Loop enforcement (before claim done)
-python3 packages/agent-contract-kit/cli/ack_loop.py done-gate --settings settings.json
-python3 packages/agent-contract-kit/cli/ack_loop.py wrap-gap --settings settings.json
-
-# optional harness hooks (requires install_hooks:true or --i-understand)
-python3 packages/agent-contract-kit/cli/ack_hooks.py install --settings settings.json --apply-project-claude
-
-# dual-review (profile dual-review|governed)
-python3 packages/agent-contract-kit/cli/ack_review.py init --settings settings.json
-python3 packages/agent-contract-kit/cli/ack_review.py handoff-gate --settings settings.json
-python3 packages/agent-contract-kit/cli/ack_review.py accept-gate --settings settings.json
-
-python3 packages/agent-contract-kit/tests/test_ack_settings.py
-python3 packages/agent-contract-kit/tests/test_ack_loop.py
-python3 packages/agent-contract-kit/tests/test_ack_hooks.py
-python3 packages/agent-contract-kit/tests/test_ack_review.py
-```
-
-Skills: loop-enforcement, harness-hooks, dual-review-fs  
-Docs: LOOP.md, HARNESS.md, GRAPH.md
-
-Graph YAML templates (`templates/solo-loop.yaml`, `dual-review.yaml`) remain illustrative until edge schemas land.
-
-## Provenance (inspiration, not runtime deps)
-
-Steamed from Maki’s production governance (2026):
-
-- Edge Contract (schema / budget / error / timeout / evidence)  
-- System-gap exit format (harness + graph)  
-- Council / wrap-up pipeline graphs  
-- Instruction freshness checks  
-
-Upstream working copies (lab, not required to use kit):
-
-- `~/.claude/docs/governance/graph-engineering.md`  
-- `~/.claude/docs/governance/edge-contract.template.md`  
-- `~/.claude/docs/governance/graphs/`  
-
-## License
-
-Apache License 2.0 — see repo root [`LICENSE`](../../LICENSE).
-
-## Tracking
-
-- OPEN-LOOPS: `OL-022`  
-- BACKLOG: `B-025`  
-- Activation: Maki ratify before implementation beyond skeleton  
+License: Apache-2.0

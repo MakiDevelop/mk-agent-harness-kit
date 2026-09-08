@@ -153,7 +153,7 @@ cp settings.example.json settings.json   # only user file
 |----------|------|
 | Repo-root `settings.example.json` | **Canonical** template |
 | `settings.json` | User copy (gitignore recommended) |
-| `spec/settings.schema.json` | Validation |
+| `src/ack/_assets/spec/settings.schema.json` | Validation |
 | `docs/PROFILES.md` | Expansion + **Normalization** (source of truth for effective config) |
 
 Users never need home-lab IPs, AMH, or multi-agent seats for `solo` / `solo-strict`.
@@ -197,7 +197,7 @@ No AMH required when `memory.enabled` is false (default).
 | **M0b product docs** | §8 + COMPILE.md | **done 2026-08-12** |
 | **M1 CLI** | `cli/ack_settings.py` validate + compile | **done 2026-08-12** |
 | **M2 loop enforcement** | `cli/ack_loop.py` + skill + LOOP.md | **done 2026-08-12** |
-| **M3 harness opt-in** | `hooks/pretool-harness.py` + `ack_hooks` | **done 2026-08-12** |
+| **M3 harness opt-in** | `src/ack/_assets/hooks/pretool-harness.py` + `ack_hooks` | **done 2026-08-12** |
 | **M4 graph edges** | `ack_review` filesystem dual-review | **done 2026-08-12** |
 | **M5 public clone** | LICENSE, GETTING_STARTED, portability lint | **this change** |
 
