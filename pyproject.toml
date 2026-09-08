@@ -13,6 +13,11 @@ dependencies = ["jsonschema"]
 
 [project.scripts]
 ack = "ack.cli:main"
+cap = "ack.capcli:cap"
+cap-check = "ack.capcli:cap_check"
+cap-go = "ack.capcli:cap_go"
+safe_move = "ack.capcli:safe_move"
+safe_rsync = "ack.capcli:safe_rsync"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -21,7 +26,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-ack = ["_assets/**/*.json", "_assets/**/*.py", "_assets/**/*.yaml"]
+ack = ["_assets/**/*.json", "_assets/**/*.py", "_assets/**/*.yaml", "_assets/bin/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

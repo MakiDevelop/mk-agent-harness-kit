@@ -1,0 +1,268 @@
+#!/bin/bash
+# safe_move - 三段式安全搬移 (DEC-005 Phase 1)
+# Copy → Verify → Delete，每段獨立確認
+set -uo pipefail
+
+RSYNC_BIN="${RSYNC_BIN:-$(command -v rsync)}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_audit_log"
+
+# === 敏感路徑 ===
+SENSITIVE_PATHS=(
+  "$HOME"
+  "$HOME/.ssh"
+  "$HOME/.gnupg"
+  "$HOME/.secrets"
+  "$HOME/.claude/mem"
+)
+
+is_sensitive() {
+  local p
+  p="$(realpath "$1" 2>/dev/null || echo "$1")"
+  for sp in "${SENSITIVE_PATHS[@]}"; do
+    local rsp
+    rsp="$(realpath "$sp" 2>/dev/null || echo "$sp")"
+    [[ "$p" == "$rsp" ]] && return 0
+  done
+  return 1
+}
+
+# === 使用說明 ===
+usage() {
+  echo "Usage: safe_move SOURCE DEST [-- EXTRA_RSYNC_OPTS...]"
+  echo ""
+  echo "三段式安全搬移 (DEC-005)："
+  echo "  1. Copy:   rsync 複製（無 destructive flag）"
+  echo "  2. Verify: 比對檔案數 + 大小"
+  echo "  3. Delete: 確認後刪除 source"
+  echo ""
+  echo "範例:"
+  echo "  safe_move /path/to/src user@nas:/volume1/video/"
+  echo "  safe_move /tmp/src /tmp/dest -- -e 'ssh -p 22688'"
+  exit 0
+}
+
+[[ $# -lt 2 ]] && usage
+
+# === 解析參數 ===
+SOURCE="$1"
+DEST="$2"
+shift 2
+
+EXTRA_OPTS=()
+if [[ "${1:-}" == "--" ]]; then
+  shift
+  EXTRA_OPTS=("$@")
+fi
+
+# === 安全檢查 ===
+if [[ -z "$SOURCE" ]]; then
+  echo "[BLOCKED] Source 為空字串。"
+  exit 1
+fi
+
+if [[ -z "$DEST" ]]; then
+  echo "[BLOCKED] Dest 為空字串。"
+  exit 1
+fi
+
+if [[ "$SOURCE" == *'*'* || "$SOURCE" == *'?'* || "$SOURCE" == *'['* ]]; then
+  echo "[BLOCKED] Source 包含通配符: $SOURCE"
+  exit 1
+fi
+
+if [[ "$SOURCE" != *:* ]] && is_sensitive "$SOURCE"; then
+  echo "[BLOCKED] Source 是敏感路徑: $SOURCE"
+  exit 1
+fi
+
+# === 解析遠端資訊（用於 verify） ===
+REMOTE_USER=""
+REMOTE_HOST=""
+REMOTE_PORT="22"
+REMOTE_PATH=""
+IS_REMOTE_DEST=false
+
+if [[ "$DEST" == *:* ]]; then
+  IS_REMOTE_DEST=true
+  # 解析 user@host:path
+  REMOTE_USER="${DEST%%@*}"
+  local_rest="${DEST#*@}"
+  REMOTE_HOST="${local_rest%%:*}"
+  REMOTE_PATH="${local_rest#*:}"
+
+  # 從 EXTRA_OPTS 提取 port（-e "ssh -p PORT"）
+  for i in "${!EXTRA_OPTS[@]}"; do
+    if [[ "${EXTRA_OPTS[$i]}" == "-e" ]]; then
+      next="${EXTRA_OPTS[$((i+1))]:-}"
+      port=$(echo "$next" | grep -oE '\-p\s+[0-9]+' | grep -oE '[0-9]+')
+      [[ -n "$port" ]] && REMOTE_PORT="$port"
+      break
+    fi
+  done
+
+  # 計算 dest 上的完整路徑（如果 source 沒有 trailing slash，rsync 會建子目錄）
+  src_basename="$(basename "$SOURCE")"
+  if [[ "$SOURCE" != */ ]]; then
+    REMOTE_VERIFY_PATH="${REMOTE_PATH%/}/${src_basename}"
+  else
+    REMOTE_VERIFY_PATH="$REMOTE_PATH"
+  fi
+fi
+
+# === 顯示摘要 ===
+echo "========================================"
+echo "  safe_move — 三段式安全搬移 (DEC-005)"
+echo "========================================"
+echo ""
+
+if [[ "$SOURCE" != *:* ]]; then
+  real_source="$(realpath "$SOURCE" 2>/dev/null || echo "$SOURCE")"
+  echo "Source:  $real_source"
+else
+  echo "Source:  $SOURCE"
+fi
+
+echo "Dest:    $DEST"
+[[ ${#EXTRA_OPTS[@]} -gt 0 ]] && echo "Opts:    ${EXTRA_OPTS[*]}"
+echo ""
+
+# ============================================
+# Phase 1: COPY
+# ============================================
+echo "=== Phase 1: COPY ==="
+echo ""
+
+# Dry run
+echo "--- Dry Run ---"
+$RSYNC_BIN -av ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"} --dry-run --itemize-changes "$SOURCE" "$DEST" 2>&1
+echo ""
+
+dry_output=$($RSYNC_BIN -av ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"} --dry-run --stats "$SOURCE" "$DEST" 2>&1)
+file_count=$(echo "$dry_output" | grep "Number of regular files transferred" | grep -o '[0-9,]*' | tail -1)
+echo "預計傳輸檔案數: ${file_count:-N/A}"
+echo ""
+
+# 確認
+TODAY=$(date +%Y-%m-%d)
+COPY_TOKEN="COPY-${TODAY}"
+echo "開始複製請輸入: $COPY_TOKEN"
+read -r input
+
+if [[ "$input" != "$COPY_TOKEN" ]]; then
+  echo "已取消。"
+  audit_log "interactive" "safe_move_copy" "[\"$SOURCE\"]" "$DEST" "RED" "files=${file_count:-?}" "" "aborted" ""
+  exit 1
+fi
+
+# 執行複製
+echo ""
+echo "--- 複製中 ---"
+$RSYNC_BIN -av ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"} "$SOURCE" "$DEST"
+copy_result=$?
+
+if [[ $copy_result -ne 0 ]]; then
+  audit_log "interactive" "safe_move_copy" "[\"$SOURCE\"]" "$DEST" "RED" "" "$COPY_TOKEN" "failure" "exit_code=$copy_result"
+  echo "✗ 複製失敗 (exit code: $copy_result)，中止搬移。"
+  exit $copy_result
+fi
+
+audit_log "interactive" "safe_move_copy" "[\"$SOURCE\"]" "$DEST" "RED" "files=${file_count:-?}" "$COPY_TOKEN" "success" ""
+echo ""
+echo "✓ 複製完成"
+echo ""
+
+# ============================================
+# Phase 2: VERIFY
+# ============================================
+echo "=== Phase 2: VERIFY ==="
+echo ""
+
+# 計算 source 統計
+if [[ "$SOURCE" != *:* ]]; then
+  src_count=$(find "$SOURCE" -type f 2>/dev/null | wc -l | tr -d ' ')
+  src_size=$(du -sk "$SOURCE" 2>/dev/null | cut -f1)
+else
+  echo "[WARNING] Remote source verify 尚未支援，跳過自動比對。"
+  src_count="?"
+  src_size="?"
+fi
+
+# 計算 dest 統計
+if $IS_REMOTE_DEST; then
+  dest_count=$(ssh -p "$REMOTE_PORT" "${REMOTE_USER}@${REMOTE_HOST}" \
+    "find '${REMOTE_VERIFY_PATH}' -type f 2>/dev/null | wc -l" 2>/dev/null | tr -d ' ')
+  dest_size=$(ssh -p "$REMOTE_PORT" "${REMOTE_USER}@${REMOTE_HOST}" \
+    "du -sk '${REMOTE_VERIFY_PATH}' 2>/dev/null | cut -f1" 2>/dev/null | tr -d ' ')
+
+  if [[ -z "$dest_count" || -z "$dest_size" ]]; then
+    echo "[WARNING] 無法 SSH 到遠端驗證。"
+    dest_count="?"
+    dest_size="?"
+  fi
+else
+  dest_path="$DEST"
+  # 如果 source 沒有 trailing slash，dest 下會有子目錄
+  if [[ "$SOURCE" != */ ]]; then
+    src_basename="$(basename "$SOURCE")"
+    dest_path="${DEST%/}/${src_basename}"
+  fi
+  dest_count=$(find "$dest_path" -type f 2>/dev/null | wc -l | tr -d ' ')
+  dest_size=$(du -sk "$dest_path" 2>/dev/null | cut -f1)
+fi
+
+echo "--- 比對結果 ---"
+printf "%-10s %12s %12s %s\n" "" "Source" "Dest" "Match?"
+printf "%-10s %12s %12s %s\n" "Files" "$src_count" "$dest_count" \
+  "$([[ "$src_count" == "$dest_count" ]] && echo "✓ YES" || echo "✗ NO")"
+printf "%-10s %10s KB %10s KB %s\n" "Size" "$src_size" "$dest_size" \
+  "$([[ "$src_size" == "$dest_size" ]] && echo "✓ YES" || echo "~CLOSE")"
+echo ""
+
+# 大小容許 1% 差異（du 在不同 filesystem 有微小差異）
+if [[ "$src_count" != "?" && "$dest_count" != "?" ]]; then
+  if [[ "$src_count" != "$dest_count" ]]; then
+    echo "[WARNING] 檔案數不一致！建議不要刪除 source。"
+    audit_log "interactive" "safe_move_verify" "[\"$SOURCE\"]" "$DEST" "RED" "count_mismatch:src=$src_count,dest=$dest_count" "" "warning" ""
+  fi
+fi
+
+audit_log "interactive" "safe_move_verify" "[\"$SOURCE\"]" "$DEST" "RED" "src=${src_count}files/${src_size}KB,dest=${dest_count}files/${dest_size}KB" "" "success" ""
+
+# ============================================
+# Phase 3: DELETE
+# ============================================
+echo "=== Phase 3: DELETE ==="
+echo ""
+echo "即將刪除 source: $SOURCE"
+echo ""
+
+DELETE_TOKEN="DELETE-${TODAY}"
+echo "確認刪除請輸入: $DELETE_TOKEN"
+echo "跳過刪除請輸入其他內容（source 會保留）"
+read -r input
+
+if [[ "$input" != "$DELETE_TOKEN" ]]; then
+  echo "跳過刪除。Source 保留在原位。"
+  audit_log "interactive" "safe_move_delete" "[\"$SOURCE\"]" "$DEST" "RED" "" "" "skipped" "source preserved"
+  exit 0
+fi
+
+# 執行刪除
+rm -rf "$SOURCE"
+del_result=$?
+
+if [[ $del_result -eq 0 ]]; then
+  audit_log "interactive" "safe_move_delete" "[\"$SOURCE\"]" "$DEST" "RED" "" "$DELETE_TOKEN" "success" ""
+  echo ""
+  echo "✓ Source 已刪除"
+else
+  audit_log "interactive" "safe_move_delete" "[\"$SOURCE\"]" "$DEST" "RED" "" "$DELETE_TOKEN" "failure" "exit_code=$del_result"
+  echo "✗ 刪除失敗 (exit code: $del_result)"
+  exit $del_result
+fi
+
+echo ""
+echo "========================================"
+echo "  safe_move 完成（三段式搬移成功）"
+echo "========================================"

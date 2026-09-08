@@ -1,0 +1,205 @@
+#!/bin/bash
+# safe_rsync - rsync 安全 wrapper (DEC-005 Phase 1)
+# 封鎖 destructive flags、空字串、通配符、敏感路徑
+# 強制 dry-run + 人類確認 token
+set -uo pipefail
+
+RSYNC_BIN="${RSYNC_BIN:-$(command -v rsync)}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_audit_log"
+
+# === 已知會吃下一個參數的 flag ===
+VALUE_FLAGS=(-e --exclude --exclude-from --include --include-from --filter \
+  --files-from --rsync-path --suffix --compare-dest --copy-dest --link-dest \
+  --backup-dir --out-format --log-file --password-file --bwlimit --port \
+  --address --timeout --modify-window --max-delete --max-size --min-size \
+  --partial-dir --compress-level --checksum-seed --chmod --sockopts \
+  --read-batch --write-batch --only-write-batch --protocol -f -T -M)
+
+is_value_flag() {
+  local candidate="$1"
+  for vf in "${VALUE_FLAGS[@]}"; do
+    [[ "$candidate" == "$vf" ]] && return 0
+  done
+  return 1
+}
+
+# === 敏感路徑 ===
+SENSITIVE_PATHS=(
+  "$HOME"
+  "$HOME/.ssh"
+  "$HOME/.gnupg"
+  "$HOME/.secrets"
+  "$HOME/.claude/mem"
+)
+
+is_sensitive() {
+  local p
+  p="$(realpath "$1" 2>/dev/null || echo "$1")"
+  for sp in "${SENSITIVE_PATHS[@]}"; do
+    local rsp
+    rsp="$(realpath "$sp" 2>/dev/null || echo "$sp")"
+    [[ "$p" == "$rsp" ]] && return 0
+  done
+  return 1
+}
+
+# === 使用說明 ===
+if [[ $# -eq 0 ]]; then
+  echo "Usage: safe_rsync [rsync options] SOURCE DEST"
+  echo ""
+  echo "安全 rsync wrapper (DEC-005)。封鎖 destructive flags，強制 dry-run + 確認。"
+  echo "搬移請用 safe_move（Copy → Verify → Delete 三段式）。"
+  exit 0
+fi
+
+# === 解析參數 ===
+ALL_ARGS=("$@")
+FLAGS=()
+NON_FLAG_ARGS=()
+skip_next=false
+
+for i in "${!ALL_ARGS[@]}"; do
+  arg="${ALL_ARGS[$i]}"
+
+  if $skip_next; then
+    skip_next=false
+    FLAGS+=("$arg")
+    continue
+  fi
+
+  # 封鎖：空字串
+  if [[ -z "$arg" ]]; then
+    echo "[BLOCKED] 偵測到空字串參數。這是造成 2026-02-19 災難的 root cause。"
+    exit 1
+  fi
+
+  # 封鎖：destructive flags
+  case "$arg" in
+    --remove-source-files)
+      echo "[BLOCKED] --remove-source-files 已永久封鎖。"
+      echo "搬移請用: safe_move SOURCE DEST"
+      exit 1
+      ;;
+    --delete|--delete-before|--delete-after|--delete-during|--delete-delay|--delete-excluded|--del)
+      echo "[BLOCKED] Delete flag ($arg) 已封鎖。"
+      exit 1
+      ;;
+  esac
+
+  # 判斷是 flag 還是 non-flag
+  if [[ "$arg" == -* ]]; then
+    FLAGS+=("$arg")
+    # 檢查是否吃下一個參數
+    if is_value_flag "$arg"; then
+      skip_next=true
+    fi
+  else
+    # 封鎖：通配符
+    if [[ "$arg" == *'*'* || "$arg" == *'?'* || "$arg" == *'['* ]]; then
+      echo "[BLOCKED] 偵測到通配符: $arg"
+      exit 1
+    fi
+    NON_FLAG_ARGS+=("$arg")
+  fi
+done
+
+# === 解析 SOURCE 和 DEST ===
+if [[ ${#NON_FLAG_ARGS[@]} -lt 2 ]]; then
+  echo "[ERROR] 需要 SOURCE 和 DEST 兩個參數。"
+  echo "Usage: safe_rsync [rsync options] SOURCE DEST"
+  exit 1
+fi
+
+if [[ ${#NON_FLAG_ARGS[@]} -gt 2 ]]; then
+  echo "[BLOCKED] 偵測到多個 source（${#NON_FLAG_ARGS[@]} 個非 flag 參數）。"
+  echo "DEC-005 規則：多路徑命令必須拆成單路徑逐一處理。"
+  echo "非 flag 參數: ${NON_FLAG_ARGS[*]}"
+  exit 1
+fi
+
+SOURCE="${NON_FLAG_ARGS[0]}"
+DEST="${NON_FLAG_ARGS[1]}"
+
+# === 敏感路徑檢查（僅本機 source） ===
+if [[ "$SOURCE" != *:* ]]; then
+  if is_sensitive "$SOURCE"; then
+    echo "[BLOCKED] Source 是敏感路徑: $SOURCE"
+    exit 1
+  fi
+fi
+
+# === 顯示摘要 ===
+echo "========================================"
+echo "  safe_rsync — DEC-005 Safety Wrapper"
+echo "========================================"
+echo ""
+
+# 解析絕對路徑（僅本機）
+if [[ "$SOURCE" != *:* ]]; then
+  real_source="$(realpath "$SOURCE" 2>/dev/null || echo "$SOURCE")"
+  echo "Source:  $real_source"
+else
+  echo "Source:  $SOURCE (remote)"
+fi
+
+if [[ "$DEST" != *:* ]]; then
+  real_dest="$(realpath "$DEST" 2>/dev/null || echo "$DEST")"
+  echo "Dest:    $real_dest"
+else
+  echo "Dest:    $DEST (remote)"
+fi
+
+echo "Flags:   ${FLAGS[*]:-（無）}"
+echo ""
+
+# === Dry Run ===
+echo "--- Dry Run ---"
+$RSYNC_BIN "${FLAGS[@]}" --dry-run --itemize-changes "$SOURCE" "$DEST" 2>&1
+dry_exit=$?
+
+if [[ $dry_exit -ne 0 ]]; then
+  echo ""
+  echo "[WARNING] Dry run 結束，exit code: $dry_exit"
+fi
+
+# 統計
+dry_output=$($RSYNC_BIN "${FLAGS[@]}" --dry-run --stats "$SOURCE" "$DEST" 2>&1)
+file_count=$(echo "$dry_output" | grep "Number of regular files transferred" | grep -o '[0-9,]*' | tail -1)
+total_size=$(echo "$dry_output" | grep "Total transferred file size" | grep -o '[0-9,]*' | head -1)
+
+echo ""
+echo "--- 傳輸摘要 ---"
+echo "檔案數: ${file_count:-N/A}"
+echo "總大小: ${total_size:-N/A} bytes"
+echo ""
+
+# === 確認 ===
+TODAY=$(date +%Y-%m-%d)
+TOKEN="EXECUTE-${TODAY}"
+echo "確認執行請輸入: $TOKEN"
+echo "取消請輸入其他任何內容或 Ctrl+C"
+read -r input
+
+if [[ "$input" != "$TOKEN" ]]; then
+  echo "已取消。"
+  audit_log "interactive" "safe_rsync" "[\"$SOURCE\"]" "$DEST" "YELLOW" "files=${file_count:-?}" "" "aborted" ""
+  exit 1
+fi
+
+# === 執行 ===
+echo ""
+echo "--- 執行中 ---"
+$RSYNC_BIN "${FLAGS[@]}" "$SOURCE" "$DEST"
+result=$?
+
+if [[ $result -eq 0 ]]; then
+  audit_log "interactive" "safe_rsync" "[\"$SOURCE\"]" "$DEST" "YELLOW" "files=${file_count:-?}" "$TOKEN" "success" ""
+  echo ""
+  echo "✓ 完成"
+else
+  audit_log "interactive" "safe_rsync" "[\"$SOURCE\"]" "$DEST" "YELLOW" "files=${file_count:-?}" "$TOKEN" "failure" "exit_code=$result"
+  echo ""
+  echo "✗ rsync 失敗 (exit code: $result)"
+  exit $result
+fi

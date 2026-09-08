@@ -1,0 +1,43 @@
+#!/bin/bash
+# _cap_audit - Capability Gateway audit logger (DEC-005 Phase 2)
+# 兼容 Phase 1 _audit_log 格式，擴充 schema_version + plan_id
+# 被 cap-check, cap-go source，不直接執行
+
+AUDIT_LOG_DIR="$HOME/.agent_audit/logs"
+
+cap_audit_log() {
+  local operator="$1"
+  local action="$2"
+  local plan_id="${3:-}"
+  local command_full="$4"
+  local sources="$5"       # JSON array string
+  local dest="$6"
+  local risk_level="$7"
+  local dry_run_summary="$8"
+  local approve_token="${9:-}"
+  local result="${10:-}"
+  local rollback_info="${11:-}"
+
+  mkdir -p "$AUDIT_LOG_DIR"
+
+  local log_file="$AUDIT_LOG_DIR/$(date +%Y-%m-%d).jsonl"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  jq -nc \
+    --argjson sv 2 \
+    --arg ts "$ts" \
+    --arg op "$operator" \
+    --arg act "$action" \
+    --arg pid "$plan_id" \
+    --arg cmd "$command_full" \
+    --argjson src "$sources" \
+    --arg dst "$dest" \
+    --arg risk "$risk_level" \
+    --arg dry "$dry_run_summary" \
+    --arg token "$approve_token" \
+    --arg res "$result" \
+    --arg rb "$rollback_info" \
+    '{schema_version:$sv, timestamp:$ts, operator:$op, action:$act, plan_id:$pid, command:$cmd, sources:$src, dest:$dst, risk_level:$risk, dry_run_summary:$dry, approve_token:$token, result:$res, rollback_info:$rb}' \
+    >> "$log_file"
+}

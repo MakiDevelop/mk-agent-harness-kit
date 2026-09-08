@@ -1,0 +1,37 @@
+#!/bin/bash
+# _audit_log - Agent Shell Safety audit log helper (DEC-005)
+# 被 safe_rsync / safe_move source，不直接執行
+
+AUDIT_LOG_DIR="$HOME/.agent_audit/logs"
+
+audit_log() {
+  local operator="$1"
+  local action="$2"
+  local sources="$3"    # JSON array string, e.g. '["/path/to/src"]'
+  local dest="$4"
+  local risk_level="$5"
+  local dry_run_summary="$6"
+  local approve_token="$7"
+  local result="$8"
+  local rollback_info="${9:-}"
+
+  mkdir -p "$AUDIT_LOG_DIR"
+
+  local log_file="$AUDIT_LOG_DIR/$(date +%Y-%m-%d).jsonl"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  jq -nc \
+    --arg ts "$ts" \
+    --arg op "$operator" \
+    --arg act "$action" \
+    --argjson src "$sources" \
+    --arg dst "$dest" \
+    --arg risk "$risk_level" \
+    --arg dry "$dry_run_summary" \
+    --arg token "$approve_token" \
+    --arg res "$result" \
+    --arg rb "$rollback_info" \
+    '{timestamp:$ts, operator:$op, action:$act, sources:$src, dest:$dst, risk_level:$risk, dry_run_summary:$dry, approve_token:$token, result:$res, rollback_info:$rb}' \
+    >> "$log_file"
+}

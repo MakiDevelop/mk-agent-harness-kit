@@ -1,0 +1,158 @@
+#!/bin/bash
+# cap-go - 驗證 plan + 確認 + 執行 (DEC-005 Phase 2)
+# Usage: cap-go <plan-id>
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_cap_lib"
+source "${SCRIPT_DIR}/_cap_audit"
+
+# === 參數 ===
+if [[ $# -lt 1 ]]; then
+  echo "Usage: cap-go <plan-id>"
+  exit 1
+fi
+
+# === Agent 模式拒絕 ===
+if is_agent_mode; then
+  echo "[BLOCKED] cap go 需要人類操作（TTY）。Agent 不能自動執行。"
+  exit 1
+fi
+
+PLAN_ID="$1"
+PLAN_FILE="$PLAN_DIR/${PLAN_ID}.json"
+
+# === 載入 Plan ===
+if [[ ! -f "$PLAN_FILE" ]]; then
+  echo "[ERROR] Plan 不存在: $PLAN_ID"
+  echo "請先執行: cap check <command> [args...]"
+  exit 1
+fi
+
+# === 檢查過期（24 小時） ===
+created_at=$(jq -r '.created_at' "$PLAN_FILE")
+if command -v gdate &>/dev/null; then
+  plan_epoch=$(gdate -d "$created_at" +%s 2>/dev/null || echo 0)
+else
+  # macOS date 用 -j -f
+  plan_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$created_at" +%s 2>/dev/null || echo 0)
+fi
+now_epoch=$(date +%s)
+
+if [[ $plan_epoch -gt 0 ]] && [[ $((now_epoch - plan_epoch)) -gt 86400 ]]; then
+  echo "[ERROR] Plan 已過期（超過 24 小時）。"
+  echo "請重新執行: cap check ..."
+  exit 1
+fi
+
+# === 檢查狀態 ===
+status=$(jq -r '.status' "$PLAN_FILE")
+if [[ "$status" != "awaiting_approval" ]]; then
+  echo "[ERROR] Plan 狀態不是 awaiting_approval（當前: $status）"
+  exit 1
+fi
+
+# === 解析 Plan ===
+CMD=$(jq -r '.command' "$PLAN_FILE")
+RISK=$(jq -r '.risk_level' "$PLAN_FILE")
+DEST=$(jq -r '.dest' "$PLAN_FILE")
+DRY_FILES=$(jq -r '.dry_run.files_transferred' "$PLAN_FILE")
+DRY_SIZE=$(jq -r '.dry_run.total_size_bytes' "$PLAN_FILE")
+DRY_EXIT=$(jq -r '.dry_run.exit_code' "$PLAN_FILE")
+
+# 讀取 args 為 bash array（bash 3.2 compatible，不用 readarray）
+CMD_ARGS=()
+while IFS= read -r line; do
+  CMD_ARGS+=("$line")
+done < <(jq -r '.args[]' "$PLAN_FILE")
+SOURCES=()
+while IFS= read -r line; do
+  SOURCES+=("$line")
+done < <(jq -r '.sources[]' "$PLAN_FILE")
+
+# === 顯示摘要 ===
+echo "========================================"
+echo "  cap go — 執行確認"
+echo "========================================"
+echo ""
+echo "Plan ID:  $PLAN_ID"
+echo "Command:  $CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}"
+echo "Risk:     $RISK"
+echo ""
+for src in "${SOURCES[@]+"${SOURCES[@]}"}"; do
+  echo "Source:   $src"
+done
+echo "Dest:     $DEST"
+echo ""
+echo "Dry-run:  ${DRY_FILES} files, ${DRY_SIZE} bytes"
+
+if [[ "$DRY_EXIT" != "0" ]]; then
+  echo "[WARNING] Dry-run exit code was $DRY_EXIT"
+fi
+echo ""
+
+# === 確認 Token ===
+TODAY=$(date +%Y-%m-%d)
+if [[ "$RISK" == "RED" ]]; then
+  TOKEN="CAP-$(openssl rand -hex 4 2>/dev/null || echo "CONFIRM")"
+  echo "RED 等級操作。確認執行請輸入: $TOKEN"
+else
+  TOKEN="EXECUTE-${TODAY}"
+  echo "確認執行請輸入: $TOKEN"
+fi
+echo "取消請輸入其他任何內容或 Ctrl+C"
+read -r input
+
+if [[ "$input" != "$TOKEN" ]]; then
+  echo "已取消。"
+  # 更新 plan 狀態
+  jq '.status = "cancelled"' "$PLAN_FILE" > "${PLAN_FILE}.tmp" && mv "${PLAN_FILE}.tmp" "$PLAN_FILE"
+  cap_audit_log "interactive" "cap_go" "$PLAN_ID" \
+    "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+    "$(jq -c '.sources' "$PLAN_FILE")" \
+    "$DEST" "$RISK" "files=${DRY_FILES}" "" "cancelled" ""
+  exit 1
+fi
+
+# === 執行 ===
+echo ""
+echo "--- 執行中 ---"
+
+if [[ "$CMD" == "rsync" ]]; then
+  # 解析 flags 和 source/dest
+  parse_rsync_paths "${CMD_ARGS[@]+"${CMD_ARGS[@]}"}"
+  $RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} "${PARSED_SOURCES[0]}" "$PARSED_DEST"
+  result=$?
+else
+  echo "[ERROR] MVP 目前只支援 rsync 執行。"
+  exit 1
+fi
+
+# === 更新 Plan ===
+exec_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [[ $result -eq 0 ]]; then
+  jq --arg ts "$exec_ts" --argjson ec "$result" \
+    '.status = "executed" | .executed_at = $ts | .exec_exit_code = $ec' \
+    "$PLAN_FILE" > "${PLAN_FILE}.tmp" && mv "${PLAN_FILE}.tmp" "$PLAN_FILE"
+
+  cap_audit_log "interactive" "cap_exec" "$PLAN_ID" \
+    "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+    "$(jq -c '.sources' "$PLAN_FILE")" \
+    "$DEST" "$RISK" "files=${DRY_FILES}" "$TOKEN" "success" ""
+
+  echo ""
+  echo "✓ 完成"
+else
+  jq --arg ts "$exec_ts" --argjson ec "$result" \
+    '.status = "failed" | .executed_at = $ts | .exec_exit_code = $ec' \
+    "$PLAN_FILE" > "${PLAN_FILE}.tmp" && mv "${PLAN_FILE}.tmp" "$PLAN_FILE"
+
+  cap_audit_log "interactive" "cap_exec" "$PLAN_ID" \
+    "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+    "$(jq -c '.sources' "$PLAN_FILE")" \
+    "$DEST" "$RISK" "files=${DRY_FILES}" "$TOKEN" "failure" "exit_code=$result"
+
+  echo ""
+  echo "✗ 執行失敗 (exit code: $result)"
+  exit $result
+fi

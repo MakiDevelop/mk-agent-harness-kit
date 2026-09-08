@@ -1,0 +1,220 @@
+#!/bin/bash
+# cap-check - 生成 plan + 執行 dry-run (DEC-005 Phase 2)
+# Usage: cap-check <command> [args...]
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_cap_lib"
+source "${SCRIPT_DIR}/_cap_audit"
+
+if [[ $# -lt 1 ]]; then
+  echo "[ERROR] Usage: cap-check <command> [args...]"
+  exit 1
+fi
+
+CMD="$1"
+shift
+CMD_ARGS=("$@")
+
+# === 風險分類 ===
+classify_command "$CMD" ${CMD_ARGS[@]+"${CMD_ARGS[@]}"}
+
+# === BLOCKED → 拒絕 ===
+if [[ "$CAP_RISK" == "BLOCKED" ]]; then
+  if is_agent_mode; then
+    jq -nc \
+      --arg cmd "$CMD" \
+      --arg risk "BLOCKED" \
+      --arg status "blocked" \
+      --argjson reasons "$(to_json_array ${RISK_REASONS[@]+"${RISK_REASONS[@]}"})" \
+      --argjson blocked "$(to_json_array "${BLOCKED_FLAGS[@]+${BLOCKED_FLAGS[@]+"${BLOCKED_FLAGS[@]}"}}")" \
+      '{command:$cmd, risk_level:$risk, risk_reasons:$reasons, blocked_flags:$blocked, status:$status}'
+  else
+    echo "[BLOCKED] $CMD 被 Capability Gateway 封鎖。"
+    for reason in ${RISK_REASONS[@]+"${RISK_REASONS[@]}"}; do
+      echo "  - $reason"
+    done
+    if [[ " ${BLOCKED_FLAGS[*]+"${BLOCKED_FLAGS[*]}"} " == *"--remove-source-files"* ]]; then
+      echo ""
+      echo "搬移請用: safe_move SOURCE DEST"
+    fi
+  fi
+  cap_audit_log "$(is_agent_mode && echo "agent" || echo "interactive")" \
+    "cap_check" "" "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" "[]" "" "$CAP_RISK" "" "" "blocked" "${RISK_REASONS[*]}"
+  exit 1
+fi
+
+# === rsync 專用處理 ===
+if [[ "$CMD" != "rsync" ]]; then
+  # MVP: 非 rsync 只輸出分類結果
+  if is_agent_mode; then
+    jq -nc \
+      --arg cmd "$CMD" \
+      --arg risk "$CAP_RISK" \
+      --argjson reasons "$(to_json_array ${RISK_REASONS[@]+"${RISK_REASONS[@]}"})" \
+      --arg status "unsupported_command" \
+      '{command:$cmd, risk_level:$risk, risk_reasons:$reasons, status:$status, message:"MVP only supports rsync. Use direct command with caution."}'
+  else
+    echo "[INFO] cap MVP 目前只支援 rsync。"
+    echo "風險等級: $CAP_RISK"
+    echo "請直接使用命令，或等待 Phase 2.1 擴充。"
+  fi
+  exit 0
+fi
+
+# === 解析 rsync 路徑 ===
+parse_rsync_paths "${CMD_ARGS[@]+"${CMD_ARGS[@]}"}"
+
+if [[ -z "$PARSED_DEST" ]]; then
+  echo "[ERROR] 需要 SOURCE 和 DEST。"
+  exit 1
+fi
+
+# === 生成 Plan ===
+PLAN_ID=$(generate_plan_id)
+mkdir -p "$PLAN_DIR"
+
+PLAN_FILE="$PLAN_DIR/${PLAN_ID}.json"
+
+# 解析絕對路徑
+resolved_sources=()
+for src in "${PARSED_SOURCES[@]}"; do
+  if [[ "$src" != *:* ]]; then
+    resolved_sources+=("$(realpath "$src" 2>/dev/null || echo "$src")")
+  else
+    resolved_sources+=("$src")
+  fi
+done
+
+resolved_dest="$PARSED_DEST"
+if [[ "$PARSED_DEST" != *:* ]]; then
+  resolved_dest="$(realpath "$PARSED_DEST" 2>/dev/null || echo "$PARSED_DEST")"
+fi
+
+# === Dry Run ===
+dry_exit=0
+dry_files=""
+dry_size=""
+
+if [[ ${#PARSED_SOURCES[@]} -gt 0 && -n "$PARSED_DEST" ]]; then
+  dry_output=$($RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} --dry-run --stats "${PARSED_SOURCES[0]}" "$PARSED_DEST" 2>&1) || dry_exit=$?
+  dry_files=$(echo "$dry_output" | grep "Number of regular files transferred" | grep -o '[0-9,]*' | tail -1)
+  dry_size=$(echo "$dry_output" | grep "Total transferred file size" | grep -o '[0-9,]*' | head -1)
+fi
+
+# === 檢查 safety ===
+has_empty=false
+has_wildcards=false
+has_sensitive=false
+multi_source=false
+
+for arg in "${CMD_ARGS[@]+"${CMD_ARGS[@]}"}"; do
+  [[ -z "$arg" ]] && has_empty=true
+  [[ "$arg" == *'*'* || "$arg" == *'?'* || "$arg" == *'['* ]] && has_wildcards=true
+done
+
+for src in "${resolved_sources[@]}"; do
+  [[ "$src" != *:* ]] && is_sensitive "$src" && has_sensitive=true
+done
+
+[[ ${#PARSED_SOURCES[@]} -gt 1 ]] && multi_source=true
+
+# === 寫入 Plan JSON ===
+OPERATOR="interactive"
+is_agent_mode && OPERATOR="agent"
+
+jq -nc \
+  --arg pid "$PLAN_ID" \
+  --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg op "$OPERATOR" \
+  --arg cmd "$CMD" \
+  --arg bin "$RSYNC_BIN" \
+  --argjson args "$(to_json_array "${CMD_ARGS[@]+"${CMD_ARGS[@]}"}")" \
+  --argjson sources "$(to_json_array "${resolved_sources[@]}")" \
+  --arg dest "$resolved_dest" \
+  --arg risk "$CAP_RISK" \
+  --argjson reasons "$(to_json_array ${RISK_REASONS[@]+"${RISK_REASONS[@]}"})" \
+  --argjson empty "$has_empty" \
+  --argjson wild "$has_wildcards" \
+  --argjson sens "$has_sensitive" \
+  --argjson multi "$multi_source" \
+  --arg dry_files "${dry_files:-0}" \
+  --arg dry_size "${dry_size:-0}" \
+  --argjson dry_exit "$dry_exit" \
+  '{
+    plan_id: $pid,
+    created_at: $ts,
+    operator: $op,
+    command: $cmd,
+    binary_path: $bin,
+    args: $args,
+    sources: $sources,
+    dest: $dest,
+    risk_level: $risk,
+    risk_reasons: $reasons,
+    safety_checks: {
+      empty_args: $empty,
+      wildcards: $wild,
+      sensitive_paths: $sens,
+      destructive_flags: [],
+      multi_source: $multi
+    },
+    dry_run: {
+      files_transferred: ($dry_files | tonumber? // 0),
+      total_size_bytes: ($dry_size | tonumber? // 0),
+      exit_code: $dry_exit
+    },
+    status: "awaiting_approval",
+    executed_at: null,
+    exec_exit_code: null
+  }' > "$PLAN_FILE"
+
+# === 輸出 ===
+if is_agent_mode; then
+  # Agent: JSON to stdout
+  cat "$PLAN_FILE"
+else
+  # Human: formatted output
+  echo "========================================"
+  echo "  cap check — Capability Gateway"
+  echo "========================================"
+  echo ""
+  echo "Plan ID:  $PLAN_ID"
+  echo "Command:  $CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}"
+  echo "Binary:   $RSYNC_BIN"
+  echo "Risk:     $CAP_RISK"
+  for reason in ${RISK_REASONS[@]+"${RISK_REASONS[@]}"}; do
+    echo "          - $reason"
+  done
+  echo ""
+
+  for src in "${resolved_sources[@]}"; do
+    echo "Source:   $src"
+  done
+  echo "Dest:     $resolved_dest"
+  echo ""
+
+  echo "--- Dry Run ---"
+  if [[ ${#PARSED_SOURCES[@]} -gt 0 && -n "$PARSED_DEST" ]]; then
+    $RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} --dry-run --itemize-changes "${PARSED_SOURCES[0]}" "$PARSED_DEST" 2>&1
+  fi
+  echo ""
+  echo "Files: ${dry_files:-0}, Size: ${dry_size:-0} bytes"
+
+  if [[ $dry_exit -ne 0 ]]; then
+    echo ""
+    echo "[WARNING] Dry run exit code: $dry_exit"
+  fi
+
+  echo ""
+  echo "Plan 已儲存: $PLAN_FILE"
+  echo "執行: cap go $PLAN_ID"
+fi
+
+# Audit
+cap_audit_log "$OPERATOR" "cap_check" "$PLAN_ID" \
+  "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+  "$(to_json_array "${resolved_sources[@]}")" \
+  "$resolved_dest" "$CAP_RISK" "files=${dry_files:-0}" "" "plan_created" ""
+
+exit 0

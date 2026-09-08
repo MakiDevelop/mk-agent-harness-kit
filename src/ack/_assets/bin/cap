@@ -1,0 +1,213 @@
+#!/bin/bash
+# cap - Capability Gateway CLI (DEC-005 Phase 2)
+# 統一入口：路由到 cap-check / cap-go / classify
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/_cap_lib"
+
+# === 使用說明 ===
+usage() {
+  echo "cap — Capability Gateway (DEC-005 Phase 2)"
+  echo ""
+  echo "Usage:"
+  echo "  cap <command> [args...]         人類模式：check + dry-run + confirm + exec"
+  echo "  cap check <command> [args...]   生成 plan + dry-run（Agent 用）"
+  echo "  cap go <plan-id>               執行 plan（需人類確認）"
+  echo "  cap classify <command> [args...] 快速風險分類"
+  echo "  cap help                        顯示此說明"
+  echo ""
+  echo "範例:"
+  echo "  cap rsync -av /src/ /dest/                    # 一條龍"
+  echo "  cap check rsync -av /src/ user@host:/dest/    # 只生成 plan"
+  echo "  cap go P-20260220-a3f1b2c4                    # 執行 plan"
+  echo "  cap classify rm -rf /tmp/build                # 只看風險等級"
+  exit 0
+}
+
+[[ $# -eq 0 ]] && usage
+
+# === 路由 ===
+case "$1" in
+  help|--help|-h)
+    usage
+    ;;
+
+  check)
+    shift
+    exec bash "${SCRIPT_DIR}/cap-check" "$@"
+    ;;
+
+  go)
+    shift
+    exec bash "${SCRIPT_DIR}/cap-go" "$@"
+    ;;
+
+  classify)
+    shift
+    if [[ $# -lt 1 ]]; then
+      echo "[ERROR] Usage: cap classify <command> [args...]"
+      exit 1
+    fi
+    CMD="$1"
+    shift
+    classify_command "$CMD" "$@"
+    if is_agent_mode; then
+      jq -nc \
+        --arg cmd "$CMD" \
+        --arg risk "$CAP_RISK" \
+        --argjson reasons "$(to_json_array ${RISK_REASONS[@]+"${RISK_REASONS[@]}"})" \
+        '{command:$cmd, risk_level:$risk, risk_reasons:$reasons}'
+    else
+      echo "$CAP_RISK"
+      for reason in ${RISK_REASONS[@]+"${RISK_REASONS[@]}"}; do
+        echo "  - $reason"
+      done
+    fi
+    ;;
+
+  *)
+    # 「sudo prefix」模式：cap <command> [args...]
+    CMD="$1"
+    shift
+    CMD_ARGS=("$@")
+
+    # Step 1: classify（先分類，BLOCKED 無論 agent/human 都拒絕）
+    classify_command "$CMD" ${CMD_ARGS[@]+"${CMD_ARGS[@]}"}
+
+    if [[ "$CAP_RISK" == "BLOCKED" ]]; then
+      if is_agent_mode; then
+        jq -nc \
+          --arg cmd "$CMD" \
+          --arg risk "BLOCKED" \
+          --argjson reasons "$(to_json_array ${RISK_REASONS[@]+"${RISK_REASONS[@]}"})" \
+          --arg status "blocked" \
+          '{command:$cmd, risk_level:$risk, risk_reasons:$reasons, status:$status}'
+      else
+        echo "[BLOCKED] $CMD 被封鎖。"
+        for reason in ${RISK_REASONS[@]+"${RISK_REASONS[@]}"}; do
+          echo "  - $reason"
+        done
+        if [[ " ${BLOCKED_FLAGS[*]+"${BLOCKED_FLAGS[*]}"} " == *"--remove-source-files"* ]]; then
+          echo ""
+          echo "搬移請用: safe_move SOURCE DEST"
+        fi
+      fi
+      exit 1
+    fi
+
+    if is_agent_mode; then
+      echo "[INFO] Agent 模式請使用: cap check $CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}"
+      exit 1
+    fi
+
+    # Human 模式：一條龍
+    echo "========================================"
+    echo "  cap — Capability Gateway (DEC-005)"
+    echo "========================================"
+    echo ""
+
+    if [[ "$CMD" != "rsync" ]]; then
+      echo "[INFO] cap MVP 目前只支援 rsync。"
+      echo "風險等級: $CAP_RISK"
+      exit 0
+    fi
+
+    parse_rsync_paths ${CMD_ARGS[@]+"${CMD_ARGS[@]}"}
+
+    if [[ -z "$PARSED_DEST" ]]; then
+      echo "[ERROR] 需要 SOURCE 和 DEST。"
+      exit 1
+    fi
+
+    # 解析路徑
+    resolved_sources=()
+    for src in "${PARSED_SOURCES[@]}"; do
+      if [[ "$src" != *:* ]]; then
+        resolved_sources+=("$(realpath "$src" 2>/dev/null || echo "$src")")
+      else
+        resolved_sources+=("$src")
+      fi
+    done
+
+    resolved_dest="$PARSED_DEST"
+    if [[ "$PARSED_DEST" != *:* ]]; then
+      resolved_dest="$(realpath "$PARSED_DEST" 2>/dev/null || echo "$PARSED_DEST")"
+    fi
+
+    echo "Command:  $CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}"
+    echo "Risk:     $CAP_RISK"
+    for reason in ${RISK_REASONS[@]+"${RISK_REASONS[@]}"}; do
+      echo "          - $reason"
+    done
+    echo ""
+    for src in "${resolved_sources[@]}"; do
+      echo "Source:   $src"
+    done
+    echo "Dest:     $resolved_dest"
+    echo ""
+
+    # Dry run
+    echo "--- Dry Run ---"
+    $RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} --dry-run --itemize-changes "${PARSED_SOURCES[0]}" "$PARSED_DEST" 2>&1
+    dry_exit=$?
+
+    dry_output=$($RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} --dry-run --stats "${PARSED_SOURCES[0]}" "$PARSED_DEST" 2>&1)
+    dry_files=$(echo "$dry_output" | grep "Number of regular files transferred" | grep -o '[0-9,]*' | tail -1)
+    dry_size=$(echo "$dry_output" | grep "Total transferred file size" | grep -o '[0-9,]*' | head -1)
+
+    echo ""
+    echo "Files: ${dry_files:-0}, Size: ${dry_size:-0} bytes"
+
+    if [[ $dry_exit -ne 0 ]]; then
+      echo "[WARNING] Dry run exit code: $dry_exit"
+    fi
+    echo ""
+
+    # Confirm
+    TODAY=$(date +%Y-%m-%d)
+    if [[ "$CAP_RISK" == "RED" ]]; then
+      TOKEN="CAP-$(openssl rand -hex 4 2>/dev/null || echo "CONFIRM")"
+      echo "RED 等級操作。確認執行請輸入: $TOKEN"
+    else
+      TOKEN="EXECUTE-${TODAY}"
+      echo "確認執行請輸入: $TOKEN"
+    fi
+    echo "取消請輸入其他任何內容或 Ctrl+C"
+    read -r input
+
+    if [[ "$input" != "$TOKEN" ]]; then
+      echo "已取消。"
+      source "${SCRIPT_DIR}/_cap_audit"
+      cap_audit_log "interactive" "cap_exec" "" \
+        "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+        "$(to_json_array "${resolved_sources[@]}")" \
+        "$resolved_dest" "$CAP_RISK" "files=${dry_files:-0}" "" "cancelled" ""
+      exit 1
+    fi
+
+    # Execute
+    echo ""
+    echo "--- 執行中 ---"
+    $RSYNC_BIN ${PARSED_FLAGS[@]+"${PARSED_FLAGS[@]}"} "${PARSED_SOURCES[0]}" "$PARSED_DEST"
+    result=$?
+
+    source "${SCRIPT_DIR}/_cap_audit"
+    if [[ $result -eq 0 ]]; then
+      cap_audit_log "interactive" "cap_exec" "" \
+        "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+        "$(to_json_array "${resolved_sources[@]}")" \
+        "$resolved_dest" "$CAP_RISK" "files=${dry_files:-0}" "$TOKEN" "success" ""
+      echo ""
+      echo "✓ 完成"
+    else
+      cap_audit_log "interactive" "cap_exec" "" \
+        "$CMD ${CMD_ARGS[*]+"${CMD_ARGS[*]}"}" \
+        "$(to_json_array "${resolved_sources[@]}")" \
+        "$resolved_dest" "$CAP_RISK" "files=${dry_files:-0}" "$TOKEN" "failure" "exit_code=$result"
+      echo ""
+      echo "✗ 執行失敗 (exit code: $result)"
+      exit $result
+    fi
+    ;;
+esac

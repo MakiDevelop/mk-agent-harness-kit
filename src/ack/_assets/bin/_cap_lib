@@ -1,0 +1,275 @@
+#!/bin/bash
+# _cap_lib - Capability Gateway 共用函數庫 (DEC-005 Phase 2)
+# 被 cap, cap-check, cap-go source，不直接執行
+
+# === 常數 ===
+CAP_VERSION="2.0.0"
+RSYNC_BIN="${RSYNC_BIN:-$(command -v rsync)}"
+PLAN_DIR="$HOME/.agent_audit/plans"
+
+# === 全域結果變數（classify 後讀取） ===
+CAP_RISK=""
+RISK_REASONS=()
+BLOCKED_FLAGS=()
+
+# === 敏感路徑 ===
+SENSITIVE_PATHS=(
+  "$HOME"
+  "$HOME/.ssh"
+  "$HOME/.gnupg"
+  "$HOME/.secrets"
+  "$HOME/.claude/mem"
+)
+
+# === 已知會吃下一個參數的 rsync flag ===
+RSYNC_VALUE_FLAGS=(-e --exclude --exclude-from --include --include-from --filter \
+  --files-from --rsync-path --suffix --compare-dest --copy-dest --link-dest \
+  --backup-dir --out-format --log-file --password-file --bwlimit --port \
+  --address --timeout --modify-window --max-delete --max-size --min-size \
+  --partial-dir --compress-level --checksum-seed --chmod --sockopts \
+  --read-batch --write-batch --only-write-batch --protocol -f -T -M)
+
+# === Gated Commands（MVP: rsync only，未來擴充） ===
+GATED_COMMANDS="rsync rm mv chmod chown"
+
+# === Agent 偵測 ===
+is_agent_mode() {
+  [[ "${CAP_AGENT_MODE:-}" == "1" ]] && return 0
+  [[ ! -t 0 ]] && return 0
+  [[ -n "${CLAUDE_CODE:-}" ]] && return 0
+  return 1
+}
+
+# === 敏感路徑檢查 ===
+is_sensitive() {
+  local p
+  p="$(realpath "$1" 2>/dev/null || echo "$1")"
+  for sp in "${SENSITIVE_PATHS[@]}"; do
+    local rsp
+    rsp="$(realpath "$sp" 2>/dev/null || echo "$sp")"
+    [[ "$p" == "$rsp" ]] && return 0
+  done
+  return 1
+}
+
+# === rsync value flag 檢查 ===
+is_rsync_value_flag() {
+  local candidate="$1"
+  for vf in "${RSYNC_VALUE_FLAGS[@]}"; do
+    [[ "$candidate" == "$vf" ]] && return 0
+  done
+  return 1
+}
+
+# === 風險分類（設定全域 CAP_RISK, RISK_REASONS, BLOCKED_FLAGS） ===
+# 呼叫後讀取 CAP_RISK 取得結果（不用 command substitution）
+classify_command() {
+  local cmd="$1"
+  shift
+
+  CAP_RISK=""
+  RISK_REASONS=()
+  BLOCKED_FLAGS=()
+
+  case "$cmd" in
+    rsync) _classify_rsync "$@" ;;
+    rm)    _classify_rm "$@" ;;
+    mv)    RISK_REASONS=("mv operation"); CAP_RISK="YELLOW" ;;
+    chmod|chown) _classify_chmod_chown "$cmd" "$@" ;;
+    *)
+      if is_agent_mode; then
+        RISK_REASONS=("unregistered command in agent mode")
+        CAP_RISK="BLOCKED"
+      else
+        RISK_REASONS=("unregistered command")
+        CAP_RISK="YELLOW"
+      fi
+      ;;
+  esac
+}
+
+_classify_rsync() {
+  CAP_RISK="YELLOW"  # rsync base risk
+
+  local skip_next=false
+  local -a non_flag_args=()
+  local -a args=("$@")
+
+  for i in "${!args[@]}"; do
+    local arg="${args[$i]}"
+
+    if $skip_next; then
+      skip_next=false
+      continue
+    fi
+
+    # 空字串 → BLOCKED
+    if [[ -z "$arg" ]]; then
+      BLOCKED_FLAGS+=("empty-string")
+      RISK_REASONS+=("empty string argument detected")
+      CAP_RISK="BLOCKED"
+      return
+    fi
+
+    # destructive flags → BLOCKED
+    case "$arg" in
+      --remove-source-files)
+        BLOCKED_FLAGS+=("$arg")
+        RISK_REASONS+=("--remove-source-files is permanently blocked")
+        CAP_RISK="BLOCKED"
+        return
+        ;;
+      --delete|--delete-before|--delete-after|--delete-during|--delete-delay|--delete-excluded|--del)
+        BLOCKED_FLAGS+=("$arg")
+        RISK_REASONS+=("delete flag ($arg) is permanently blocked")
+        CAP_RISK="BLOCKED"
+        return
+        ;;
+    esac
+
+    if [[ "$arg" == -* ]]; then
+      if is_rsync_value_flag "$arg"; then
+        skip_next=true
+      fi
+    else
+      # 通配符 → RED
+      if [[ "$arg" == *'*'* || "$arg" == *'?'* || "$arg" == *'['* ]]; then
+        CAP_RISK="RED"
+        RISK_REASONS+=("wildcard in argument: $arg")
+      fi
+      non_flag_args+=("$arg")
+    fi
+  done
+
+  # 多 source → RED
+  if [[ ${#non_flag_args[@]} -gt 2 ]]; then
+    CAP_RISK="RED"
+    RISK_REASONS+=("multiple sources detected (${#non_flag_args[@]} non-flag args)")
+  fi
+
+  # 敏感路徑 → RED
+  for nfa in ${non_flag_args[@]+"${non_flag_args[@]}"}; do
+    if [[ "$nfa" != *:* ]] && is_sensitive "$nfa"; then
+      CAP_RISK="RED"
+      RISK_REASONS+=("sensitive path: $nfa")
+    fi
+  done
+
+  # 遠端目的地 → 加註
+  for nfa in ${non_flag_args[@]+"${non_flag_args[@]}"}; do
+    if [[ "$nfa" == *:* ]]; then
+      RISK_REASONS+=("remote destination")
+      break
+    fi
+  done
+
+  [[ ${#RISK_REASONS[@]} -eq 0 ]] && RISK_REASONS+=("rsync write operation")
+}
+
+_classify_rm() {
+  local has_r=false has_f=false
+  for arg in "$@"; do
+    case "$arg" in
+      -rf|-fr) has_r=true; has_f=true ;;
+      -r|-R|--recursive) has_r=true ;;
+      -f|--force) has_f=true ;;
+    esac
+  done
+  # 檢查目標是否敏感
+  local last_arg="${!#}"
+  if [[ -n "$last_arg" ]] && is_sensitive "$last_arg"; then
+    RISK_REASONS+=("rm on sensitive path: $last_arg")
+    CAP_RISK="BLOCKED"
+    return
+  fi
+  if $has_r; then
+    RISK_REASONS+=("recursive rm")
+    CAP_RISK="RED"
+  elif $has_f; then
+    RISK_REASONS+=("force rm")
+    CAP_RISK="YELLOW"
+  else
+    RISK_REASONS+=("rm operation")
+    CAP_RISK="YELLOW"
+  fi
+}
+
+_classify_chmod_chown() {
+  local cmd="$1"
+  shift
+  for arg in "$@"; do
+    if [[ "$arg" == "-R" || "$arg" == "--recursive" ]]; then
+      RISK_REASONS+=("recursive $cmd")
+      CAP_RISK="RED"
+      return
+    fi
+  done
+  RISK_REASONS+=("$cmd operation")
+  CAP_RISK="YELLOW"
+}
+
+# === Plan ID 生成 ===
+generate_plan_id() {
+  local rand
+  rand="$(openssl rand -hex 4 2>/dev/null || od -An -tx4 -N4 /dev/urandom | tr -d ' ')"
+  echo "P-$(date +%Y%m%d)-${rand}"
+}
+
+# === 解析 rsync 的 source/dest ===
+parse_rsync_paths() {
+  PARSED_FLAGS=()
+  PARSED_SOURCES=()
+  PARSED_DEST=""
+
+  local skip_next=false
+  local -a non_flags=()
+  local -a all_args=("$@")
+
+  for i in "${!all_args[@]}"; do
+    local arg="${all_args[$i]}"
+
+    if $skip_next; then
+      skip_next=false
+      PARSED_FLAGS+=("$arg")
+      continue
+    fi
+
+    if [[ "$arg" == -* ]]; then
+      PARSED_FLAGS+=("$arg")
+      if is_rsync_value_flag "$arg"; then
+        skip_next=true
+      fi
+    else
+      non_flags+=("$arg")
+    fi
+  done
+
+  if [[ ${#non_flags[@]} -ge 2 ]]; then
+    # bash 3.2 compatible: no negative array indices
+    local last_idx=$((${#non_flags[@]} - 1))
+    PARSED_DEST="${non_flags[$last_idx]}"
+    unset "non_flags[$last_idx]"
+    PARSED_SOURCES=("${non_flags[@]}")
+  elif [[ ${#non_flags[@]} -eq 1 ]]; then
+    PARSED_SOURCES=("${non_flags[0]}")
+  fi
+}
+
+# === JSON helper: 陣列轉 JSON array ===
+to_json_array() {
+  if [[ $# -eq 0 ]]; then
+    echo "[]"
+    return
+  fi
+  local first=true
+  echo -n "["
+  for item in "$@"; do
+    if $first; then
+      first=false
+    else
+      echo -n ","
+    fi
+    jq -n --arg v "$item" '$v' | tr -d '\n'
+  done
+  echo "]"
+}
