@@ -14,6 +14,51 @@ def guard(name: str, root: Path, payload: dict, *extra: str, env: dict | None = 
     return subprocess.run([sys.executable, "-m", "ack.cli", "guard", name, "--project-root", str(root), "--stdin-json", *extra], input=json.dumps(payload), text=True, capture_output=True, env={**os.environ, "PYTHONPATH": str(KIT / "src"), "HOME": str(root), **(env or {})}, check=False)
 
 class TestGuards(unittest.TestCase):
+    def test_progress_tracker_and_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); path = str(root / "work.py")
+            edit = {"session_id":"s", "tool_name":"Edit", "tool_input":{"file_path":path}}
+            for _ in range(6): self.assertEqual(json.loads(guard("progress-tracker", root, edit).stdout)["decision"], "allow")
+            self.assertEqual(json.loads(guard("no-progress-guard", root, edit).stdout)["decision"], "warn")
+            for _ in range(6): guard("progress-tracker", root, edit)
+            self.assertEqual(json.loads(guard("no-progress-guard", root, edit).stdout)["decision"], "deny")
+            excluded = {"session_id":"s", "tool_name":"Write", "tool_input":{"file_path":str(root / "evidence/a")}}
+            guard("progress-tracker", root, excluded)
+            state = json.loads((root / ".mk-agentos/evidence/progress.json").read_text())
+            self.assertNotIn(str(root / "evidence/a"), state["sessions"]["s"]["file_edits"])
+
+    def test_progress_call_failure_noop_and_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); call = {"session_id":"s","tool_name":"Bash","tool_input":{"command":"pytest -q","nested":{"中文":"值"}},"tool_response":{"exit_code":1,"stderr":"bad"}}
+            self.assertEqual(json.loads(guard("no-progress-guard", root, call).stdout)["decision"], "noop")
+            for _ in range(3): guard("progress-tracker", root, call)
+            self.assertEqual(json.loads(guard("no-progress-guard", root, call).stdout)["decision"], "deny")
+            failure = {"session_id":"s2","tool_name":"Bash","tool_input":{"command":"pytest -q"},"tool_response":{"exit_code":1,"stderr":"bad"}}
+            for _ in range(2): guard("progress-tracker", root, failure)
+            self.assertEqual(json.loads(guard("no-progress-guard", root, failure).stdout)["decision"], "warn")
+            edit = {"session_id":"s3","tool_name":"Edit","tool_input":{"file_path":"/x"}}
+            guard("progress-tracker", root, edit)
+            self.assertEqual(json.loads(guard("no-progress-guard", root, edit, env={"MK_NO_PROGRESS_EDIT_BLOCK":"1"}).stdout)["decision"], "deny")
+            # legacy jq `// "0"` parity: an explicit null exit_code is "0", not a failure
+            null_exit = {"session_id":"s4","tool_name":"Bash","tool_input":{"command":"pytest -q"},"tool_response":{"exit_code":None,"stderr":None}}
+            guard("progress-tracker", root, null_exit)
+            state = json.loads((root / ".mk-agentos/evidence/progress.json").read_text())
+            self.assertEqual(state["sessions"]["s4"]["failure_by_command"], {})
+
+    def test_state_validator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); state = root / "project-state.yaml"; state.write_text("tasks: []\n")
+            base = {"tool_name":"Edit","tool_input":{"file_path":str(state),"old_string":"","new_string":""}}
+            for text in ("status: VERIFIED", "status: ACCEPTED", "tech_verified: true", "business_aligned: true"):
+                payload = {**base, "tool_input":{**base["tool_input"],"new_string":text}}
+                self.assertEqual(json.loads(guard("state-validator", root, payload).stdout)["decision"], "deny")
+            good = {**base, "tool_input":{**base["tool_input"],"new_string":"status: VERIFIED\nverifier_id: v\nevidence_id: e"}}
+            self.assertEqual(json.loads(guard("state-validator", root, good).stdout)["decision"], "allow")
+            content = "tasks:\n  - id: x\n    status: VERIFIED\n"
+            write = {"tool_name":"Write","tool_input":{"file_path":str(state),"content":content}}
+            denied = json.loads(guard("state-validator", root, write).stdout); self.assertEqual(denied["decision"], "deny"); self.assertIn("evidence_id", denied["reason"])
+            write["tool_input"]["content"] = "{ not json"; skipped = json.loads(guard("state-validator", root, write).stdout)
+            self.assertEqual(skipped["decision"], "allow"); self.assertIn("unparsable", skipped["reason"])
     def test_read_tracker_allow_and_noop(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -156,6 +201,19 @@ class TestGuards(unittest.TestCase):
             (root / "project-state.yaml").write_text("preset: governed\n")
             self.assertEqual(json.loads(guard("preset-auto-upgrade", root, {}).stdout)["decision"], "noop")
             self.assertEqual(json.loads(guard("preset-auto-upgrade", Path(tmp) / "none", {}).stdout)["decision"], "noop")
+
+    def test_session_onboarding_extra_command_only_from_env(self) -> None:
+        # Security: a repository-controlled settings.json must never be able to
+        # run a command at SessionStart; only the operator's environment can.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "evidence").mkdir()
+            (root / "project-state.yaml").write_text("project: demo\npreset: light\n")
+            settings = root / "settings.json"
+            settings.write_text(json.dumps({"profile": "solo", "layers": {"harness": {"onboarding": {"extra_command": "echo INJECTED_FROM_REPO"}}}}))
+            out = json.loads(guard("session-onboarding", root, {}, "--settings", str(settings), env={"ACK_ONBOARDING_EXTRA_COMMAND": ""}).stdout)
+            self.assertNotIn("INJECTED_FROM_REPO", out.get("context") or "")
+            out = json.loads(guard("session-onboarding", root, {}, env={"ACK_ONBOARDING_EXTRA_COMMAND": "echo FROM_OPERATOR_ENV"}).stdout)
+            self.assertIn("FROM_OPERATOR_ENV", out["context"])
 
     def test_session_onboarding_capsule_noop_and_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
