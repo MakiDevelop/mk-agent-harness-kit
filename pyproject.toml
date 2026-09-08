@@ -9,7 +9,30 @@ description = "Portable contracts and loop gates for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
+authors = [{ name = "Makito Chiba" }]
+keywords = ["ai-agents", "claude-code", "harness", "guardrails", "hooks", "evidence", "governance"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = ["jsonschema"]
+
+[project.urls]
+Homepage = "https://github.com/MakiDevelop/mk-agent-harness-kit"
+Repository = "https://github.com/MakiDevelop/mk-agent-harness-kit"
+Issues = "https://github.com/MakiDevelop/mk-agent-harness-kit/issues"
+Changelog = "https://github.com/MakiDevelop/mk-agent-harness-kit/blob/main/CHANGELOG.md"
+Related = "https://github.com/MakiDevelop/agent-memory-hall"
 
 [project.scripts]
 ack = "ack.cli:main"
