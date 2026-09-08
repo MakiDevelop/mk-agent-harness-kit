@@ -58,7 +58,7 @@ Pick a profile: `solo` (one agent, minimal), `solo-strict`, `dual-review` (execu
 ## Quick Start (5 minutes)
 
 ```bash
-pipx install .                           # from this repository; puts `ack` on PATH
+pipx install mk-agent-harness-kit        # from PyPI; puts `ack` and `cap` on PATH (or `pipx install .` from a checkout)
 cd your-project
 cp /path/to/settings.example.json settings.json
 # edit settings.json: set verify.commands to your real test / lint / typecheck

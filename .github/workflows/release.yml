@@ -1,10 +1,10 @@
-name: Release to PyPI
+name: Release
 
 # Triggered by pushing a version tag (v0.1.0, v0.2.0, ...).
-# Uses PyPI trusted publishing (OIDC): no token is stored in the repo.
-# One-time setup on pypi.org → project "mk-agent-harness-kit" → Publishing →
-#   owner: MakiDevelop, repository: mk-agent-harness-kit,
-#   workflow: release.yml, environment: pypi
+# Builds sdist + wheel, checks the tag matches pyproject, and creates the GitHub
+# release with the artifacts attached. PyPI upload is done by the maintainer
+# locally (`uv build && twine upload dist/*`); switch the publish job to
+# pypa/gh-action-pypi-publish with trusted publishing when that is configured.
 
 on:
   push:
@@ -33,20 +33,16 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
+  github-release:
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      id-token: write   # trusted publishing
       contents: write   # GitHub release
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
       - name: GitHub release with the built artifacts
         uses: softprops/action-gh-release@v2
         with:

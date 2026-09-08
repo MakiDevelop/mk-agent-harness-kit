@@ -10,7 +10,7 @@
 ```bash
 git clone https://github.com/MakiDevelop/mk-agent-harness-kit.git
 cd mk-agent-harness-kit
-pipx install .
+pipx install mk-agent-harness-kit   # from PyPI; or `pipx install .` inside this checkout
 
 cd /path/to/your-project
 cp /path/to/mk-agent-harness-kit/settings.example.json settings.json
