@@ -36,10 +36,15 @@ legacy vault is needed. Example `settings.json` wiring:
 ```json
 {
   "hooks": {
-    "PreToolUse": [{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh first-read-lock"}]}],
+    "PreToolUse": [
+      {"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh first-read-lock"}]},
+      {"matcher":"Bash","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh council-dispatch-guard"},{"type":"command","command":"/path/to/ack-guard-hook.sh no-progress-guard"}]},
+      {"matcher":"Edit|Write","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh state-validator"},{"type":"command","command":"/path/to/ack-guard-hook.sh no-progress-guard"}]}
+    ],
     "PostToolUse": [
       {"matcher":"Read","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh read-tracker"}]},
       {"matcher":"Bash|Edit|Write","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh preset-auto-upgrade"}]},
+      {"matcher":"Bash|Edit|Write","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh progress-tracker"}]},
       {"matcher":"*","hooks":[{"type":"command","command":"/path/to/ack-guard-hook.sh evidence"}]}
     ],
     "SessionStart": [

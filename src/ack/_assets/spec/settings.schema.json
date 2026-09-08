@@ -157,10 +157,14 @@
                 }
               }
             },
-            "onboarding": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {"extra_command": {"type": "string"}}
+            "no_progress": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "edit_block": {"type":"integer","minimum":1,"default":12},
+                "edit_warn": {"type":"integer","minimum":1,"default":6},
+                "call_block": {"type":"integer","minimum":1,"default":3},
+                "fail_warn": {"type":"integer","minimum":1,"default":2}
+              }
             }
           }
         },

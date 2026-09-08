@@ -13,8 +13,8 @@ This 0.1.0 release provides `ack settings`, `ack loop`, `ack review`, `ack hooks
 `ack portability-lint`, the `cap` destructive-command gateway, and `ack guard`.
 `ack guard read-tracker`, `ack guard evidence`, `ack guard first-read-lock`,
 `ack guard council-dispatch-guard`, `ack guard preset-auto-upgrade`, and
-`ack guard session-onboarding` are available; the remaining guards, `ack lint`, and
-`ack settings init` remain planned.
+`ack guard session-onboarding`, `ack guard progress-tracker`, `ack guard no-progress-guard`,
+and `ack guard state-validator` are available; `ack lint` and `ack settings init` remain planned.
 
 ## The Problem
 
@@ -47,7 +47,7 @@ ack guard <name>        → stateful Claude Code hook guard with a JSON decision
 cap check <command>     → BLOCKED / YELLOW / RED classification, plan creation, and rsync dry-run for agent review; `cap go` needs a human at a TTY
 ```
 
-Roadmap (not in 0.1.0): remaining `ack guard` implementations (no-progress, state machine), `ack lint` (rule-file enforcement audit), `ack settings init`.
+Roadmap (not in 0.1.0): `ack lint` (rule-file enforcement audit), `ack settings init`.
 
 Pick a profile: `solo` (one agent, minimal), `solo-strict`, `dual-review` (executor + reviewer), `governed` (human acceptance gate). Upgrade is automatic when scope grows; downgrade needs a human.
 

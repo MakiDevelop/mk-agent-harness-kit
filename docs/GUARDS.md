@@ -17,11 +17,11 @@ to the project root.
 | `evidence` | PostToolUse writes a compact UTF-8 SHA-256 hash-chain record | `vault.jsonl`, `.vault.lock` |
 | `first-read-lock` | PreToolUse Edit/Write/Bash blocks mutation before required reads | reads `.session-reads` |
 | `council-dispatch-guard` | PreToolUse Bash detects direct Council CLI dispatch | — |
-| `no-progress-guard` | planned (`legacy/no-progress-guard.sh`) | — |
+| `no-progress-guard` | PreToolUse loop warnings and blocks from progress counters | reads `progress.json` |
 | `preset-auto-upgrade` | PostToolUse upgrades light → standard or standard → governed | `decision-log.jsonl`, `project-state.yaml` |
-| `progress-tracker` | planned (`legacy/progress-tracker.sh`) | — |
+| `progress-tracker` | PostToolUse records session progress counters | `progress.json`, `.progress.lock` |
 | `session-onboarding` | SessionStart supplies a ≤8 KB context capsule | clears `.session-reads` |
-| `state-validator` | planned (`legacy/state-validator.sh`) | — |
+| `state-validator` | PreToolUse validates project-state transitions | — |
 
 `first-read-lock` only activates when `project-state.yaml` exists. `light` allows;
 `standard` requires a read of `project-state.yaml`, plus `evidence/attempt-log.jsonl`
@@ -45,4 +45,25 @@ maximum of three. It changes only the top-level `preset:` line and appends its d
 `project` / `preset` scalars and a `tasks:` list of flat mappings (`id`, `status`,
 `name`, `blocked_reason`), with quoted values and comment lines. Multiline values,
 flow-style YAML, and nested lists are intentionally unsupported. Optional
-`layers.harness.onboarding.extra_command` appends successful stdout; failures are ignored.
+An optional operator-supplied command can append one more line to the capsule, but it is
+read **only** from the environment variable `ACK_ONBOARDING_EXTRA_COMMAND` (set it in your
+own hook wiring), never from `settings.json`: settings live in the repository, and a
+command that runs automatically at SessionStart must not be repository-controlled.
+It runs with a 10-second timeout; failures and timeouts are ignored.
+
+## `progress.json` schema v2
+
+The tracker writes alongside `vault.jsonl`: `{"schema_version":2,"sessions":{"<session>":{"file_edits":{},"failure_by_command":{},"call_hashes":{}}}}`. It uses a locked temporary-file rename. Call keys use SHA-256 first 16 hex characters over `tool_name + ":" + json.dumps(tool_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`; this is jq `-Sc` compatible. Thresholds live at `layers.harness.no_progress` (12/6/3/2), with `MK_NO_PROGRESS_EDIT_BLOCK` and `MK_NO_PROGRESS_EDIT_WARN` taking precedence.
+
+## State-validator rules
+
+| Transition | Required field |
+| --- | --- |
+| Edit to `VERIFIED` | `verifier_id`, `evidence_id` |
+| Edit to `ACCEPTED` | `accepted_by` |
+| Edit `tech_verified: true` | `evidence_id` |
+| Edit `business_aligned: true` | `aligned_by` |
+| Write `VERIFIED` task | verifier, evidence (task or acceptance criterion), tech and business true |
+| Write `ACCEPTED` task | accepted_by |
+
+Write parsing is deliberately fail-open when the compact YAML/JSON parser cannot parse content. YAML booleans are recognized only as `true` (case-insensitive), unlike PyYAML's broader YAML 1.1 behavior.

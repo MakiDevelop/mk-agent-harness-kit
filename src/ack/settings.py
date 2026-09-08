@@ -201,7 +201,7 @@ def compile_settings(raw: dict[str, Any]) -> dict[str, Any]:
         "adapters": deepcopy(base["adapters"]),
     }
     effective["layers"]["harness"]["council"] = deepcopy(COUNCIL_DEFAULTS)
-    effective["layers"]["harness"]["onboarding"] = {"extra_command": ""}
+    effective["layers"]["harness"]["no_progress"] = {"edit_block": 12, "edit_warn": 6, "call_block": 3, "fail_warn": 2}
 
     # 2. project
     if "project" in raw:
