@@ -10,8 +10,9 @@
 ## Status
 
 This 0.1.0 release provides `ack settings`, `ack loop`, `ack review`, `ack hooks`,
-`ack portability-lint`, and the `cap` destructive-command gateway. The roadmap items
-`ack guard`, `ack evidence`, `ack lint`, and `ack settings init` are not implemented yet.
+`ack portability-lint`, the `cap` destructive-command gateway, and `ack guard`.
+`ack guard read-tracker`, `ack guard evidence`, and `ack guard first-read-lock` are
+available; the remaining guards, `ack lint`, and `ack settings init` remain planned.
 
 ## The Problem
 
@@ -40,10 +41,11 @@ ack loop wrap-gap       → prints the system-gap lines a wrap-up must carry aft
 ack review accept-gate  → two-agent review over the filesystem; self-approval refused
 ack hooks install       → opt-in Claude Code PreToolUse hook: blocks force-push / rm -rf, asks before push, delete, deploy, secrets
 ack portability-lint    → the kit's own check that nothing home-lab-specific leaked in
+ack guard <name>        → stateful Claude Code hook guard with a JSON decision envelope
 cap check <command>     → BLOCKED / YELLOW / RED classification, plan creation, and rsync dry-run for agent review; `cap go` needs a human at a TTY
 ```
 
-Roadmap (not in 0.1.0): `ack guard` (no-progress, first-read, state machine), `ack evidence` (hash-chained tool log), `ack lint` (rule-file enforcement audit), `ack settings init`.
+Roadmap (not in 0.1.0): remaining `ack guard` implementations (no-progress, state machine), `ack lint` (rule-file enforcement audit), `ack settings init`.
 
 Pick a profile: `solo` (one agent, minimal), `solo-strict`, `dual-review` (executor + reviewer), `governed` (human acceptance gate). Upgrade is automatic when scope grows; downgrade needs a human.
 
