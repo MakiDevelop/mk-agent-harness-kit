@@ -31,6 +31,7 @@ def _project_root(explicit: str | None) -> Path:
 def context_from_args(project_root: str | None, settings: str | None) -> GuardContext:
     root = _project_root(project_root)
     configured: str | None = None
+    raw: dict[str, Any] = {}
     if settings:
         settings_path = Path(settings)
         if not settings_path.is_file():
@@ -43,7 +44,9 @@ def context_from_args(project_root: str | None, settings: str | None) -> GuardCo
     evidence_dir = Path(chosen).expanduser() if chosen else root / ".mk-agentos" / "evidence"
     if not evidence_dir.is_absolute():
         evidence_dir = root / evidence_dir
-    return GuardContext(root, evidence_dir.resolve())
+    context = GuardContext(root, evidence_dir.resolve())
+    context.settings = raw
+    return context
 
 
 def _string(value: Any, default: str) -> str:
@@ -101,19 +104,26 @@ def run(payload: dict[str, Any], context: GuardContext) -> dict[str, Any]:
 
 def verify(vault: Path) -> int:
     previous = "genesis"
+    failures: list[str] = []
     if not vault.is_file():
         print(f"vault not found: {vault}", file=sys.stderr)
         return 1
     for line_no, line in enumerate(vault.read_text(encoding="utf-8").splitlines(), 1):
+        recorded = previous
         try:
             record = json.loads(line)
             recorded = record.pop("hash")
             expected = hashlib.sha256(_compact(record).encode("utf-8")).hexdigest()
             if record.get("prev_hash") != previous or recorded != expected:
-                raise ValueError("previous hash or record hash mismatch")
+                failures.append(f"line {line_no}: previous hash or record hash mismatch")
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            print(f"vault verification failed at line {line_no}: {exc}", file=sys.stderr)
-            return 1
-        previous = recorded
+            failures.append(f"line {line_no}: {exc}")
+        else:
+            previous = recorded
+    if failures:
+        for failure in failures:
+            print(f"vault verification failed at {failure}", file=sys.stderr)
+        print(f"vault verification failed: {len(failures)} break(s)", file=sys.stderr)
+        return 1
     print(f"vault verified: {vault}")
     return 0

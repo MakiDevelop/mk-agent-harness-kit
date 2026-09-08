@@ -147,6 +147,15 @@ PROFILES: dict[str, dict[str, Any]] = {
 }
 
 STRICT_PROFILES = frozenset({"solo-strict", "dual-review", "governed"})
+COUNCIL_DEFAULTS: dict[str, Any] = {
+    "dispatcher": "council-dispatch",
+    "blocked_clis": {
+        "codex": ["exec"],
+        "gemini": ["-p", "-i", "--print", "--prompt", "--prompt-interactive"],
+        "grok": ["-p", "-i", "--print", "--prompt", "--prompt-interactive"],
+        "agy": ["-p", "-i", "--print", "--prompt", "--prompt-interactive"],
+    },
+}
 
 
 def load_json(path: Path) -> Any:
@@ -191,6 +200,8 @@ def compile_settings(raw: dict[str, Any]) -> dict[str, Any]:
         "human": deepcopy(base["human"]),
         "adapters": deepcopy(base["adapters"]),
     }
+    effective["layers"]["harness"]["council"] = deepcopy(COUNCIL_DEFAULTS)
+    effective["layers"]["harness"]["onboarding"] = {"extra_command": ""}
 
     # 2. project
     if "project" in raw:

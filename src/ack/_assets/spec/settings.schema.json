@@ -144,6 +144,23 @@
               "type": "string",
               "minLength": 1,
               "description": "Optional evidence state directory, relative to the project root when not absolute."
+            },
+            "council": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "dispatcher": {"type": "string", "default": "council-dispatch"},
+                "blocked_clis": {
+                  "type": "object",
+                  "default": {"codex":["exec"],"gemini":["-p","-i","--print","--prompt","--prompt-interactive"],"grok":["-p","-i","--print","--prompt","--prompt-interactive"],"agy":["-p","-i","--print","--prompt","--prompt-interactive"]},
+                  "additionalProperties": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            },
+            "onboarding": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"extra_command": {"type": "string"}}
             }
           }
         },
