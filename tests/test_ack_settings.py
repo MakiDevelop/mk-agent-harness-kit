@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,14 +12,13 @@ import unittest
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
-CLI = KIT / "cli" / "ack_settings.py"
-SCHEMA = KIT / "spec" / "settings.schema.json"
-ROOT = KIT.parents[1]
-ROOT_EXAMPLE = ROOT / "settings.example.json"
+os.environ["PYTHONPATH"] = str(KIT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+CLI = ["-m", "ack.cli", "settings"]
+SCHEMA = KIT / "src" / "ack" / "_assets" / "spec" / "settings.schema.json"
+ROOT_EXAMPLE = KIT / "settings.example.json"
 PKG_EXAMPLE = KIT / "settings.example.json"
 
-sys.path.insert(0, str(KIT / "cli"))
-import ack_settings  # noqa: E402
+from ack import settings as ack_settings
 
 
 class TestAckSettings(unittest.TestCase):
@@ -26,7 +26,7 @@ class TestAckSettings(unittest.TestCase):
         r = subprocess.run(
             [
                 sys.executable,
-                str(CLI),
+                *CLI,
                 "validate",
                 "--settings",
                 str(ROOT_EXAMPLE),
@@ -43,7 +43,7 @@ class TestAckSettings(unittest.TestCase):
         r = subprocess.run(
             [
                 sys.executable,
-                str(CLI),
+                *CLI,
                 "validate",
                 "--settings",
                 str(PKG_EXAMPLE),
@@ -169,7 +169,7 @@ class TestAckSettings(unittest.TestCase):
             r = subprocess.run(
                 [
                     sys.executable,
-                    str(CLI),
+                    *CLI,
                     "compile",
                     "--settings",
                     str(ROOT_EXAMPLE),

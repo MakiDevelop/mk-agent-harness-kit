@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,14 +12,14 @@ import unittest
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
-CLI = KIT / "cli" / "ack_loop.py"
-SETTINGS_CLI = KIT / "cli" / "ack_settings.py"
-ROOT = KIT.parents[1]
+os.environ["PYTHONPATH"] = str(KIT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+CLI = ["-m", "ack.cli", "loop"]
+SETTINGS_CLI = ["-m", "ack.cli", "settings"]
 
 
 def run_cli(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(CLI), *args],
+        [sys.executable, *CLI, *args],
         cwd=str(cwd),
         capture_output=True,
         text=True,
@@ -157,7 +158,7 @@ class TestAckLoop(unittest.TestCase):
             c = subprocess.run(
                 [
                     sys.executable,
-                    str(SETTINGS_CLI),
+                    *SETTINGS_CLI,
                     "compile",
                     "--settings",
                     str(settings),

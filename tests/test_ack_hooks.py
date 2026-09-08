@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,8 +12,9 @@ import unittest
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
-HOOK = KIT / "hooks" / "pretool-harness.py"
-CLI = KIT / "cli" / "ack_hooks.py"
+os.environ["PYTHONPATH"] = str(KIT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+HOOK = KIT / "src" / "ack" / "_assets" / "hooks" / "pretool-harness.py"
+CLI = ["-m", "ack.cli", "hooks"]
 
 
 def run_hook(command: str, resolved: Path) -> dict:
@@ -65,6 +67,17 @@ def write_resolved(td: Path, **harness_human) -> Path:
 
 
 class TestHarnessHook(unittest.TestCase):
+    def test_settings_fallback_asks_when_ack_is_unavailable(self) -> None:
+        payload = {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}
+        env = {"ACK_SETTINGS": str(KIT / "settings.example.json"), "PATH": ""}
+        proc = subprocess.run(
+            [sys.executable, "-S", str(HOOK)], input=json.dumps(payload), text=True,
+            capture_output=True, env=env, check=False,
+        )
+        data = json.loads(proc.stdout)
+        result = data["hookSpecificOutput"]
+        self.assertEqual(result["permissionDecision"], "ask")
+        self.assertIn("cannot compile settings", result["permissionDecisionReason"])
     def test_allow_safe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             td = Path(tmp)
@@ -140,7 +153,7 @@ class TestAckHooksInstall(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    str(CLI),
+                    *CLI,
                     "install",
                     "--settings",
                     str(sp),
@@ -166,7 +179,7 @@ class TestAckHooksInstall(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    str(CLI),
+                    *CLI,
                     "install",
                     "--settings",
                     str(sp),
@@ -192,8 +205,7 @@ class TestAckHooksInstall(unittest.TestCase):
             # Fake home claude path via symlink root -> structure is hard;
             # instead monkey by pointing project root at a dir whose .claude/settings.json
             # we can't easily make == Path.home(); unit-test the helper instead.
-            sys.path.insert(0, str(KIT / "cli"))
-            from ack_hooks import is_user_global_claude_settings  # noqa: E402
+            from ack.hooks import is_user_global_claude_settings
 
             home_settings = Path.home() / ".claude" / "settings.json"
             self.assertTrue(
@@ -220,7 +232,7 @@ class TestAckHooksInstall(unittest.TestCase):
             subprocess.run(
                 [
                     sys.executable,
-                    str(CLI),
+                    *CLI,
                     "install",
                     "--settings",
                     str(sp),
@@ -231,7 +243,7 @@ class TestAckHooksInstall(unittest.TestCase):
                 capture_output=True,
             )
             proc = subprocess.run(
-                [sys.executable, str(CLI), "uninstall", "--settings", str(sp)],
+                [sys.executable, *CLI, "uninstall", "--settings", str(sp)],
                 cwd=str(td),
                 capture_output=True,
                 text=True,

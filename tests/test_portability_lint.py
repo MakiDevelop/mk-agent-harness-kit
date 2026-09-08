@@ -6,24 +6,45 @@ from __future__ import annotations
 import subprocess
 import sys
 import unittest
+import os
+import hashlib
+import tempfile
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
-LINT = KIT / "cli" / "ack_portability_lint.py"
-sys.path.insert(0, str(KIT / "cli"))
-import ack_portability_lint as lint  # noqa: E402
+os.environ["PYTHONPATH"] = str(KIT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+LINT = ["-m", "ack.cli", "portability-lint"]
+from ack import portability_lint as lint
 
 
 class TestPortabilityLint(unittest.TestCase):
     def test_lint_clean(self) -> None:
         r = subprocess.run(
-            [sys.executable, str(LINT)],
+            [sys.executable, *LINT],
             capture_output=True,
             text=True,
             check=False,
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("PORTABILITY LINT OK", r.stdout)
+
+    def test_repo_and_package_modes(self) -> None:
+        repo = lint.iter_files()
+        self.assertEqual(repo[0], "repo")
+        repo_names = {name for _, name in repo[2]}
+        self.assertTrue(any(name.startswith("tests/") for name in repo_names))
+        self.assertTrue(any(name.startswith("skills/") for name in repo_names))
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = subprocess.run(
+                [sys.executable, *LINT], cwd=tmp, capture_output=True, text=True, check=False
+            )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue(proc.stdout.startswith("PORTABILITY LINT MODE: package mode"))
+
+    def test_root_settings_matches_packaged_asset(self) -> None:
+        root = KIT / "settings.example.json"
+        asset = KIT / "src" / "ack" / "_assets" / "settings.example.json"
+        self.assertEqual(hashlib.sha256(root.read_bytes()).hexdigest(), hashlib.sha256(asset.read_bytes()).hexdigest())
 
     def test_rejects_private_ips(self) -> None:
         # Build samples without storing denylist literals in scanned tree files

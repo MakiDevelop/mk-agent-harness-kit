@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -11,12 +12,13 @@ import unittest
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
-CLI = KIT / "cli" / "ack_review.py"
+os.environ["PYTHONPATH"] = str(KIT / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+CLI = ["-m", "ack.cli", "review"]
 
 
 def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(CLI), *args],
+        [sys.executable, *CLI, *args],
         cwd=str(cwd),
         capture_output=True,
         text=True,
@@ -131,6 +133,20 @@ class TestAckReview(unittest.TestCase):
             a1 = run(["accept-gate", "--settings", str(sp), "--session", "s2"], td)
             self.assertEqual(a1.returncode, 0, a1.stdout + a1.stderr)
             self.assertIn("ACCEPT OPEN", a1.stdout)
+
+    def test_handoff_returns_loop_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            sp = dual_settings(td)
+            data = json.loads(sp.read_text(encoding="utf-8"))
+            data["verify"] = {"commands": [f"{sys.executable} -c \"raise SystemExit(7)\""]}
+            sp.write_text(json.dumps(data), encoding="utf-8")
+            run(["init", "--settings", str(sp), "--session", "failed-loop"], td)
+            sdir = td / ".mk-agentos" / "reviews" / "failed-loop"
+            (sdir / "briefing.md").write_text(GOOD_BRIEFING, encoding="utf-8")
+            result = run(["handoff-gate", "--settings", str(sp), "--session", "failed-loop"], td)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("VERIFY FAIL", result.stdout + result.stderr)
 
     def test_accept_fail_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
