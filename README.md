@@ -9,6 +9,8 @@
 
 ## Status
 
+This is the **public ACK extract**. The older public repo [`maki-agentos`](https://github.com/MakiDevelop/maki-agentos) is archived; install from here (`pipx install mk-agent-harness-kit`).
+
 This 0.1.0 release provides `ack settings`, `ack loop`, `ack review`, `ack hooks`,
 `ack portability-lint`, the `cap` destructive-command gateway, and `ack guard`.
 `ack guard read-tracker`, `ack guard evidence`, `ack guard first-read-lock`,
